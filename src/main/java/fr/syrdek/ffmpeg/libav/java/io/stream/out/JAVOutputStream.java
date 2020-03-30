@@ -121,10 +121,7 @@ public class JAVOutputStream implements AutoCloseable {
       final AVRational originTimeBase = origin.getAvstream().time_base();
       // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
-      avpacket.pts(avutil.av_rescale_q_rnd(avpacket.pts(), originTimeBase, avstream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      avpacket.dts(avutil.av_rescale_q_rnd(avpacket.dts(), originTimeBase, avstream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      avpacket.duration(avutil.av_rescale_q(avpacket.duration(), originTimeBase, avstream.time_base()));
-      avpacket.pos(-1); // -1 = inconnu pour laisser libav le calculer.
+      avcodec.av_packet_rescale_ts(avpacket, originTimeBase, avstream.time_base());
     }
     
     container.writeInterleaved(packet);
