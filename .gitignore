@@ -3,3 +3,4 @@
 .settings
 /target/
 /samples/
+/hs_err_pid*
