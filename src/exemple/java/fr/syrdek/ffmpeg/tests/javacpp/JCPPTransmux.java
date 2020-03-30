@@ -164,7 +164,7 @@ public class JCPPTransmux {
     for (;;) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
       if (ret == avutil.AVERROR_EOF) {
-        LOG.debug("Fin de stream atteinte (code={}).", ret, avutil.AVERROR_EOF, avutil.AVERROR_EAGAIN());
+        LOG.debug("Fin de stream atteinte (code={}).", ret);
         break;
       }
       // Gestion des autres cas d'erreur.
