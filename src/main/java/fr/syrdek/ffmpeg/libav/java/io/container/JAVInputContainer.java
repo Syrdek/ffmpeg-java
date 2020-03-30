@@ -117,14 +117,25 @@ public class JAVInputContainer implements AutoCloseable {
       @Override
       public int call(final Pointer opaque, final BytePointer buffer, int len) {
         try {
-          int read = in.read(dataBuffer, 0, Math.min(len, dataBuffer.length));
-          if (read <= 0) {
-            LOG.debug("Fin de fichier rencontrée lors de la lecture");
-            // Informe ffmpeg que le flux est terminé.
-            return avutil.AVERROR_EOF;
+          int read = 0;
+          while (read < len) {
+            // Petite optimisation :
+            // Si on a déjà lu quelques données, et qu'il n'y en a plus de disponible dans le stream,
+            // on retourne tout de suite les données qu'on a.
+            // Ceci permet de laisser libav traiter le peu de données qu'on a récupéré, pendant que le stream se remplit.
+            if (read > 0 && in.available() <= 0) {
+              return read;
+            }
+            
+            int nb =  in.read(dataBuffer, 0, Math.min(len, dataBuffer.length));
+            if (nb <= 0) {
+              LOG.debug("Fin de lecture");
+              // Informe ffmpeg que le flux est terminé.
+              return avutil.AVERROR_EOF;
+            }
+            read += nb;
+            buffer.position(0).put(dataBuffer);
           }
-          buffer.position(0).put(dataBuffer);
-
           // Restaure la limite précédente.
           return (int) read;
         } catch (IOException e) {
@@ -243,7 +254,7 @@ public class JAVInputContainer implements AutoCloseable {
    */
   public JAVPacket readPacket() {
     unrefPacket();
-    
+
     final AVPacket packet = new AVPacket();
     int ret = avformat.av_read_frame(formatCtx, packet);
     if (ret == avutil.AVERROR_EOF) {
