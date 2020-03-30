@@ -3,6 +3,8 @@ package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +30,7 @@ import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
 import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
+import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
  * 
@@ -37,6 +40,17 @@ public class JCPPTransmux {
   private static final Logger LOG = LoggerFactory.getLogger(JCPPTransmux.class);
   private static final int BUFFER_SIZE = 256 * 1024;
 
+  public static void main(String[] args) throws Exception {
+    Utils.cleanup();
+    
+    try (final InputStream in = new FileInputStream("samples/audio.mp2");
+        final OutputStream out = new FileOutputStream("target/result.mkv")) {
+      new JCPPTransmux().withFormatName("matroska").transmux(in, out);
+    } catch (Exception e) {
+      LOG.error("Erreur dans le main", e);
+    }
+  }
+  
   private AVFormatContext inFormatCtx;
   private BytePointer inStreamPtr;
   private AVIOContext ioInCtx;

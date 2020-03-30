@@ -1,5 +1,7 @@
 package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -23,6 +25,8 @@ import org.slf4j.LoggerFactory;
 
 import com.github.manevolent.ffmpeg4j.FFmpegException;
 
+import fr.syrdek.ffmpeg.tests.Utils;
+
 /**
  * 
  * @author Syrdek
@@ -31,12 +35,24 @@ import com.github.manevolent.ffmpeg4j.FFmpegException;
 public class JCPPDecoder {
   private static final Logger LOG = LoggerFactory.getLogger(JCPPDecoder.class);
 
+
+  public static void main(String[] args) throws Exception {
+    Utils.cleanup();
+    
+    try (final InputStream in = new FileInputStream("samples/audio.mp2");
+        final OutputStream out = new FileOutputStream("target/result.wav")) {
+      new JCPPDecoder(in, out).decode();
+    } catch (Exception e) {
+      LOG.error("Erreur dans le main", e);
+    }
+  }
+
   private static final int AUDIO_INBUF_SIZE = 20480;
   private static final int ARRAY_REFILL_THRESHOLD = 4096;
 
   private final WritableByteChannel outfile;
   private final ReadableByteChannel infile;
-
+  
   public JCPPDecoder(final InputStream infile, final OutputStream outfile) {
     super();
     this.infile = Channels.newChannel(infile);
@@ -48,7 +64,7 @@ public class JCPPDecoder {
    * 
    * @throws Exception
    */
-  public void transcode() throws Exception {
+  public void decode() throws Exception {
     LOG.debug("Audio decoding");
 
     AVPacket packet = avcodec.av_packet_alloc();

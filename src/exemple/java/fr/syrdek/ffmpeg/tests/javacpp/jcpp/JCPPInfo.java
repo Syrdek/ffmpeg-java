@@ -3,8 +3,11 @@ package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
 
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.avcodec;
@@ -26,6 +29,7 @@ import fr.syrdek.ffmpeg.libav.java.FFmpegException;
 import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
 import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
+import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
  * 
@@ -38,6 +42,16 @@ public class JCPPInfo {
   static {
     // S'assure que les libs natives soient bien chargées.
     FFmpegNatives.ensureLoaded();
+  }
+  
+  public static void main(String[] args) throws Exception {
+    Utils.cleanup();
+    
+    try (final InputStream in = new FileInputStream("samples/audio.mp2")) {
+      new JCPPInfo().printInfos(in);
+    } catch (Exception e) {
+      LOG.error("Erreur dans le main", e);
+    }
   }
 
   /**

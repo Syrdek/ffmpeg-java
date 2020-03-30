@@ -1,5 +1,6 @@
 package fr.syrdek.ffmpeg.tests.jav;
 
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,7 +20,7 @@ import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVPacket;
 import fr.syrdek.ffmpeg.libav.java.io.stream.in.JAVInputStream;
 import fr.syrdek.ffmpeg.libav.java.io.stream.out.JAVOutputStream;
-import fr.syrdek.ffmpeg.tests.FfmpegEntryPoint;
+import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
  * 
@@ -34,14 +35,14 @@ public class JAVTransmux {
   }
   
   public static void main(String[] args) throws Exception {
-    try (final InputStream in = FfmpegEntryPoint.class.getResourceAsStream("/samples/video.mp4");
+    try (final InputStream in = new FileInputStream("samples/video.mp4");
         final OutputStream out = new FileOutputStream("target/result.mkv")) {
       new JAVTransmux().transmux(in, out, "video/x-matroska");
     } catch (Exception e) {
       LOG.error("Erreur dans le main", e);
     }
   }
-
+  
   public void transmux(final InputStream in, final OutputStream out, final String mimeType) throws IOException {
     try (
         // Conteneur source.
