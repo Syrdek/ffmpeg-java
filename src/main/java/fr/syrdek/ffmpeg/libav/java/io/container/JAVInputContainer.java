@@ -118,6 +118,7 @@ public class JAVInputContainer implements AutoCloseable {
       public int call(final Pointer opaque, final BytePointer buffer, int len) {
         try {
           int read = 0;
+          buffer.position(0);
           while (read < len) {
             // Petite optimisation :
             // Si on a déjà lu quelques données, et qu'il n'y en a plus de disponible dans le stream,
@@ -126,17 +127,16 @@ public class JAVInputContainer implements AutoCloseable {
             if (read > 0 && in.available() <= 0) {
               return read;
             }
-            
-            int nb =  in.read(dataBuffer, 0, Math.min(len, dataBuffer.length));
+
+            int nb = in.read(dataBuffer, 0, Math.min(len - read, dataBuffer.length));
             if (nb <= 0) {
               LOG.debug("Fin de lecture");
               // Informe ffmpeg que le flux est terminé.
               return avutil.AVERROR_EOF;
             }
+            buffer.put(dataBuffer);
             read += nb;
-            buffer.position(0).put(dataBuffer);
           }
-          // Restaure la limite précédente.
           return (int) read;
         } catch (IOException e) {
           LOG.error("Echec lors de la lecture du flux", e);

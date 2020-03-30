@@ -22,6 +22,7 @@ import org.bytedeco.javacpp.avformat.AVOutputFormat;
 import org.bytedeco.javacpp.avformat.AVStream;
 import org.bytedeco.javacpp.avutil;
 import org.bytedeco.javacpp.avutil.AVDictionary;
+import org.bytedeco.javacpp.avutil.AVRational;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -178,13 +179,9 @@ public class JCPPTransmux {
       }
 
       packet.stream_index(outStream.index());
-
       // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
-      packet.pts(avutil.av_rescale_q_rnd(packet.pts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.dts(avutil.av_rescale_q_rnd(packet.dts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.duration(avutil.av_rescale_q(packet.duration(), inStream.time_base(), outStream.time_base()));
-      packet.pos(-1); // -1 = inconnu pour laisser libav le calculer.
+      avcodec.av_packet_rescale_ts(packet, inStream.time_base(), outStream.time_base());
 
       checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
       avcodec.av_packet_unref(packet);
