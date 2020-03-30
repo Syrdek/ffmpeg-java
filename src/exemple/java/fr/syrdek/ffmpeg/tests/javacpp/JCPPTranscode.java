@@ -8,11 +8,11 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.util.HashMap;
-import java.util.Map;
 
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.avcodec;
+import org.bytedeco.javacpp.avcodec.AVCodec;
+import org.bytedeco.javacpp.avcodec.AVCodecContext;
 import org.bytedeco.javacpp.avcodec.AVCodecParameters;
 import org.bytedeco.javacpp.avcodec.AVPacket;
 import org.bytedeco.javacpp.avformat;
@@ -44,8 +44,8 @@ public class JCPPTranscode {
     Utils.cleanup();
     
     try (final InputStream in = new FileInputStream("samples/audio.mp2");
-        final OutputStream out = new FileOutputStream("target/result.wav")) {
-      new JCPPTranscode().transcode(in, out);
+        final OutputStream out = new FileOutputStream("target/result.mkv")) {
+      new JCPPTranscode().withFormatName("matroska").transcode(in, out);
     } catch (Exception e) {
       LOG.error("Erreur dans le main", e);
     }
@@ -135,31 +135,28 @@ public class JCPPTranscode {
     final int nbInStreams = inFormatCtx.nb_streams();
 
     final AVPacket packet = new AVPacket();
-    // Table de correspondance entre les flux en entree et en sortie.
-    final Map<Integer, AVStream> streamsMap = new HashMap<>(nbInStreams);
-
+    final AVCodecContext[] codecsCtx = new AVCodecContext[nbInStreams];
+    
     for (int i = 0; i < nbInStreams; i++) {
       final AVStream inStream = inFormatCtx.streams(i);
       final AVCodecParameters codecPar = inStream.codecpar();
-
-      if (codecPar.codec_type() != avutil.AVMEDIA_TYPE_AUDIO &&
-          codecPar.codec_type() != avutil.AVMEDIA_TYPE_VIDEO &&
-          codecPar.codec_type() != avutil.AVMEDIA_TYPE_SUBTITLE) {
-        LOG.debug("Filtrage du flux de type {}", codecPar.codec_type());
-        continue;
-      }
-
+      final AVCodec codec = checkAllocation(avcodec.avcodec_find_decoder(codecPar.codec_id()));
+      final AVCodecContext codecCtx = checkAllocation(avcodec.avcodec_alloc_context3(codec));
+      checkAndThrow(avcodec.avcodec_parameters_to_context(codecCtx, codecPar));
+      checkAndThrow(avcodec.avcodec_open2(codecCtx, codec, (AVDictionary)null));
+      
+      
       final AVStream outStream = checkAllocation(avformat.avformat_new_stream(outFormatCtx, null));
+      
+      // Aucun transcodage.
       checkAndThrow(avcodec.avcodec_parameters_copy(outStream.codecpar(), codecPar));
-      // Efface le tag du codec qui est lié à son format d'entrée.
       outStream.codecpar().codec_tag(0);
       
-      // Enregistre que le flux n°i correspond au flux de sortie outStream.
-      streamsMap.put(i, outStream);
+      codecsCtx[i] = codecCtx;
     }
-
+    
     checkAndThrow(avformat.avformat_write_header(outFormatCtx, (AVDictionary)null));
-
+    
     for (;;) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
       if (ret == avutil.AVERROR_EOF) {
@@ -170,27 +167,21 @@ public class JCPPTranscode {
       checkAndThrow(ret);
 
       final AVStream inStream = inFormatCtx.streams(packet.stream_index());
-      final AVStream outStream = streamsMap.get(packet.stream_index());
-      
-      if (outStream == null) {
-        avcodec.av_packet_unref(packet);
-        continue;
-      }
+      final AVStream outStream = outFormatCtx.streams(packet.stream_index());
 
       packet.stream_index(outStream.index());
-
       // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
-      packet.pts(avutil.av_rescale_q_rnd(packet.pts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.dts(avutil.av_rescale_q_rnd(packet.dts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.duration(avutil.av_rescale_q(packet.duration(), inStream.time_base(), outStream.time_base()));
-      packet.pos(-1); // -1 = inconnu pour laisser libav le calculer.
+      avcodec.av_packet_rescale_ts(packet, inStream.time_base(), outStream.time_base());
 
       checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
       avcodec.av_packet_unref(packet);
     }
 
     checkAndThrow(avformat.av_write_trailer(outFormatCtx));
+    
+    
+    for (int i = 0; i < codecsCtx.length; i++) avcodec.avcodec_free_context(codecsCtx[i]);
 
     avformat.avio_context_free(ioInCtx);
     avformat.avio_context_free(ioOutCtx);
