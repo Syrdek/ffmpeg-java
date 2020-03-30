@@ -1,4 +1,4 @@
-package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
+package fr.syrdek.ffmpeg.tests.javacpp;
 
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;

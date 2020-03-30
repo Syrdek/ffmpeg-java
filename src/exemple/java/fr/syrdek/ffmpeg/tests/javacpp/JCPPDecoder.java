@@ -1,4 +1,4 @@
-package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
+package fr.syrdek.ffmpeg.tests.javacpp;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;

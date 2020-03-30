@@ -1,4 +1,4 @@
-package fr.syrdek.ffmpeg.tests.javacpp.jcpp;
+package fr.syrdek.ffmpeg.tests.javacpp;
 
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
@@ -36,16 +36,16 @@ import fr.syrdek.ffmpeg.tests.Utils;
  * 
  * @author Syrdek
  */
-public class JCPPTransmux {
-  private static final Logger LOG = LoggerFactory.getLogger(JCPPTransmux.class);
+public class JCPPTranscode {
+  private static final Logger LOG = LoggerFactory.getLogger(JCPPTranscode.class);
   private static final int BUFFER_SIZE = 256 * 1024;
 
   public static void main(String[] args) throws Exception {
     Utils.cleanup();
     
     try (final InputStream in = new FileInputStream("samples/audio.mp2");
-        final OutputStream out = new FileOutputStream("target/result.mkv")) {
-      new JCPPTransmux().withFormatName("matroska").transmux(in, out);
+        final OutputStream out = new FileOutputStream("target/result.wav")) {
+      new JCPPTranscode().transcode(in, out);
     } catch (Exception e) {
       LOG.error("Erreur dans le main", e);
     }
@@ -128,7 +128,7 @@ public class JCPPTransmux {
    * @param in
    * @throws IOException
    */
-  public void transmux(final InputStream in, final OutputStream out) throws IOException {
+  public void transcode(final InputStream in, final OutputStream out) throws IOException {
     openInput(in);
     openOutput(out);
 
@@ -199,97 +199,7 @@ public class JCPPTransmux {
     avformat.avformat_free_context(outFormatCtx);
   }
 
-  /**
-   *
-   * @param in
-   * @throws IOException
-   */
-  public void transmux2(final InputStream in, final OutputStream out) throws IOException {
-    openInput(in);
-    openOutput(out);
-
-    // Table de correspondance entre les flux en entree et en sortie.
-    Map<Integer, Integer> streamsMap = new HashMap<Integer, Integer>();
-
-    int outStreamIndex = 0;
-    // Parcourt les flux du format.
-    for (int i = 0; i < inFormatCtx.nb_streams(); i++) {
-      final AVStream inStream = inFormatCtx.streams(i);
-      final AVCodecParameters inParams = inStream.codecpar();
-
-      // Ignore les flux qui ne sont ni audio, ni video, ni sous-titre.
-      if (inParams.codec_type() != avutil.AVMEDIA_TYPE_AUDIO &&
-          inParams.codec_type() != avutil.AVMEDIA_TYPE_VIDEO &&
-          inParams.codec_type() != avutil.AVMEDIA_TYPE_SUBTITLE) {
-        continue;
-      }
-
-      // Ajoute une entrée dans la table de correspondance.
-      streamsMap.put(i, outStreamIndex++);
-
-      final AVStream outStream = checkAllocation(avformat.avformat_new_stream(outFormatCtx, null));
-      checkAndThrow(avcodec.avcodec_parameters_copy(outStream.codecpar(), inParams));
-    }
-    avformat.av_dump_format(outFormatCtx, 0, (String) null, 1);
-
-    checkAndThrow(avformat.avformat_write_header(outFormatCtx, (AVDictionary) null));
-
-    final AVPacket packet = new AVPacket();
-
-    while (true) {
-      int ret = avformat.av_read_frame(inFormatCtx, packet);
-      LOG.debug("...1...");
-      if (ret == avutil.AVERROR_EAGAIN() || ret == avutil.AVERROR_EOF) {
-        // OK, on a fini.
-        break;
-      }
-      // Vérifie si on a une erreur bloquante.
-      checkAndThrow(ret);
-
-      LOG.debug("...2...");
-      int streamInIdx = packet.stream_index();
-      final AVStream inStream = inFormatCtx.streams(streamInIdx);
-
-      LOG.debug("...3...");
-      int streamOutIdx = streamsMap.getOrDefault(streamInIdx, -1);
-      if (streamOutIdx < 0) {
-        // Le paquet ne fait pas partie d'un flux qui sera transposé.
-        avcodec.av_packet_unref(packet);
-        continue;
-      }
-      LOG.debug("...4...");
-      final AVStream outStream = outFormatCtx.streams(streamOutIdx);
-      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
-      // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
-      packet.pts(avutil.av_rescale_q_rnd(packet.pts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.dts(avutil.av_rescale_q_rnd(packet.dts(), inStream.time_base(), outStream.time_base(), avutil.AV_ROUND_NEAR_INF | avutil.AV_ROUND_PASS_MINMAX));
-      packet.duration(avutil.av_rescale_q(packet.duration(), inStream.time_base(), outStream.time_base()));
-      packet.pos(-1); // -1 = inconnu pour laisser libav le calculer.
-
-      LOG.debug("...5...");
-      checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
-      LOG.debug("...6...");
-      avcodec.av_packet_unref(packet);
-      LOG.debug("...7...");
-    }
-
-    LOG.debug("...8...");
-    checkAndThrow(avformat.av_write_trailer(outFormatCtx));
-    LOG.debug("...9...");
-    avformat.avformat_close_input(inFormatCtx);
-
-    avformat.avformat_free_context(outFormatCtx);
-    avformat.avformat_free_context(inFormatCtx);
-    avformat.avio_context_free(ioOutCtx);
-    avformat.avio_context_free(ioInCtx);
-
-    // avutil.av_free(outStreamPtr);
-    outStreamPtr.deallocate();
-    // avutil.av_free(inStreamPtr);
-    inStreamPtr.deallocate();
-  }
-
-  public JCPPTransmux withFormatName(String formatName) {
+  public JCPPTranscode withFormatName(String formatName) {
     this.outFormat = checkAllocation(AVOutputFormat.class, avformat.av_guess_format(formatName, null, null));
     return this;
   }
