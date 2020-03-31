@@ -130,24 +130,6 @@ public class FFmpegException extends RuntimeException {
   /**
    * Envoie une exception si l'objet donné n'a pas pu être alloué.
    * 
-   * @param name
-   *          Le nom de l'objet à vérifier.
-   * @param alloc
-   *          L'objet alloué.
-   * @return L'objet alloué.
-   * @throws FFmpegException
-   *           Si l'objet n'a pas été alloué.
-   */
-  public static <T> T checkAllocation(String name, T alloc) {
-    if (alloc == null) {
-      throw new FFmpegException("Impossible d'allouer l'objet " + name);
-    }
-    return alloc;
-  }
-
-  /**
-   * Envoie une exception si l'objet donné n'a pas pu être alloué.
-   * 
    * @param alloc
    *          L'objet alloué.
    * @return L'objet alloué.
@@ -155,8 +137,21 @@ public class FFmpegException extends RuntimeException {
    *           Si l'objet n'a pas été alloué.
    */
   public static <T> T checkAllocation(T alloc) {
+    return checkAllocation("Impossible d'allouer l'objet", alloc);
+  }
+
+  /**
+   * Envoie une exception si l'objet donné n'a pas pu être alloué.
+   * @param message Le message à afficher dans le cas où l'objet est <code>null</code>.
+   * @param alloc
+   *          L'objet alloué.
+   * @return L'objet alloué.
+   * @throws FFmpegException
+   *           Si l'objet n'a pas été alloué.
+   */
+  public static <T> T checkAllocation(String message, T alloc) {
     if (alloc == null) {
-      throw new FFmpegException("Impossible d'allouer l'objet");
+      throw new FFmpegException(message);
     }
     return alloc;
   }

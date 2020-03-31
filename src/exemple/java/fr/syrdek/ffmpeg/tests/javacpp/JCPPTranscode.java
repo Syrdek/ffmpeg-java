@@ -8,6 +8,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.avcodec;
@@ -30,6 +32,7 @@ import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
 import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
+import fr.syrdek.ffmpeg.libav.java.io.stream.AudioParameters;
 import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
@@ -42,23 +45,37 @@ public class JCPPTranscode {
 
   public static void main(String[] args) throws Exception {
     Utils.cleanup();
-    
+
     try (final InputStream in = new FileInputStream("samples/audio.mp2");
         final OutputStream out = new FileOutputStream("target/result.mkv")) {
-      new JCPPTranscode().withFormatName("matroska").transcode(in, out);
+      new JCPPTranscode()
+          .withFormatName("matroska")
+          .withAudioParams(new AudioParameters("aac"))
+          //.withVideoParams("libx265", "x265-params", "keyint=60:min-keyint=60:scenecut=0")
+          .transcode(in, out);
     } catch (Exception e) {
       LOG.error("Erreur dans le main", e);
     }
   }
-  
+
+  // Paramètres en entrée.
   private AVFormatContext inFormatCtx;
   private BytePointer inStreamPtr;
   private AVIOContext ioInCtx;
 
+  // Paramètres en sortie.
+  // Format
   private AVFormatContext outFormatCtx;
   private AVOutputFormat outFormat;
   private BytePointer outStreamPtr;
   private AVIOContext ioOutCtx;
+
+  // Sortie audio.
+  private boolean transcodeAudio = false;
+  private AudioParameters audioParams;
+
+  // Sortie vidéo.
+  private boolean transcodeVideo = false;
 
   static {
     // S'assure que les libs natives soient bien chargées.
@@ -123,6 +140,51 @@ public class JCPPTranscode {
     outFormatCtx.pb(ioOutCtx);
   }
 
+  class StreamInfo implements AutoCloseable{
+    final int type;
+
+    final int inIndex;
+    final AVCodec inCodec;
+    final AVStream inStream;
+    final AVCodecContext inCodecCtx;
+    final AVCodecParameters inCodecPar;
+
+    final int outIndex;
+    final AVStream outStream;
+
+    public StreamInfo(int index, AVStream inStream) {
+      this.inCodecPar = inStream.codecpar();
+      this.type = this.inCodecPar.codec_type();
+
+      this.inIndex = index;
+      this.inStream = inStream;
+      this.inCodec = checkAllocation(avcodec.avcodec_find_decoder(this.inCodecPar.codec_id()));
+      this.inCodecCtx = checkAllocation(avcodec.avcodec_alloc_context3(this.inCodec));
+      checkAndThrow(avcodec.avcodec_parameters_to_context(this.inCodecCtx, this.inCodecPar));
+      checkAndThrow(avcodec.avcodec_open2(this.inCodecCtx, this.inCodec, (AVDictionary) null));
+
+      this.outStream = checkAllocation(avformat.avformat_new_stream(outFormatCtx, null));
+      this.outIndex = outStream.index();
+    }
+
+    public void initStreamCopy() {
+      avcodec.avcodec_parameters_copy(outStream.codecpar(), this.inCodecPar);
+    }
+
+    public void initAudioTranscodage() {
+
+    }
+
+    public void initVideoTranscodage() {
+
+    }
+
+    @Override
+    public void close() {
+      avcodec.avcodec_free_context(inCodecCtx);
+    }
+  }
+
   /**
    *
    * @param in
@@ -135,32 +197,43 @@ public class JCPPTranscode {
     final int nbInStreams = inFormatCtx.nb_streams();
 
     final AVPacket packet = new AVPacket();
-    final AVCodecContext[] codecsCtx = new AVCodecContext[nbInStreams];
-    
+    final Map<Integer, StreamInfo> infos = new HashMap<Integer, StreamInfo>();
+
     for (int i = 0; i < nbInStreams; i++) {
       final AVStream inStream = inFormatCtx.streams(i);
       final AVCodecParameters codecPar = inStream.codecpar();
-      final AVCodec codec = checkAllocation(avcodec.avcodec_find_decoder(codecPar.codec_id()));
-      final AVCodecContext codecCtx = checkAllocation(avcodec.avcodec_alloc_context3(codec));
-      checkAndThrow(avcodec.avcodec_parameters_to_context(codecCtx, codecPar));
-      checkAndThrow(avcodec.avcodec_open2(codecCtx, codec, (AVDictionary)null));
-      
-      
-      final AVStream outStream = checkAllocation(avformat.avformat_new_stream(outFormatCtx, null));
-      
-      // Aucun transcodage.
-      checkAndThrow(avcodec.avcodec_parameters_copy(outStream.codecpar(), codecPar));
-      outStream.codecpar().codec_tag(0);
-      
-      codecsCtx[i] = codecCtx;
+
+      StreamInfo info = null;
+      switch (codecPar.codec_type()) {
+      case avutil.AVMEDIA_TYPE_AUDIO:
+        info = new StreamInfo(i, inStream);
+        if (transcodeAudio) {
+          info.initAudioTranscodage();
+        } else {
+          info.initStreamCopy();
+        }
+        break;
+      case avutil.AVMEDIA_TYPE_VIDEO:
+        info = new StreamInfo(i, inStream);
+        if (transcodeVideo) {
+          info.initVideoTranscodage();
+        } else {
+          info.initStreamCopy();
+        }
+        break;
+      default:
+        continue;
+      }
+
+      infos.put(i, info);
     }
-    
-    checkAndThrow(avformat.avformat_write_header(outFormatCtx, (AVDictionary)null));
-    
+
+    checkAndThrow(avformat.avformat_write_header(outFormatCtx, (AVDictionary) null));
+
     for (;;) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
       if (ret == avutil.AVERROR_EOF) {
-        LOG.debug("Fin de stream atteinte (code={}).", ret, avutil.AVERROR_EOF, avutil.AVERROR_EAGAIN());
+        LOG.debug("Fin de stream atteinte (code={}).", ret);
         break;
       }
       // Gestion des autres cas d'erreur.
@@ -170,6 +243,7 @@ public class JCPPTranscode {
       final AVStream outStream = outFormatCtx.streams(packet.stream_index());
 
       packet.stream_index(outStream.index());
+
       // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
       avcodec.av_packet_rescale_ts(packet, inStream.time_base(), outStream.time_base());
@@ -179,10 +253,9 @@ public class JCPPTranscode {
     }
 
     checkAndThrow(avformat.av_write_trailer(outFormatCtx));
-    
-    
-    for (int i = 0; i < codecsCtx.length; i++) avcodec.avcodec_free_context(codecsCtx[i]);
 
+    // Nettoyage.
+    infos.values().forEach(StreamInfo::close);
     avformat.avio_context_free(ioInCtx);
     avformat.avio_context_free(ioOutCtx);
     avformat.avformat_close_input(inFormatCtx);
@@ -192,6 +265,11 @@ public class JCPPTranscode {
 
   public JCPPTranscode withFormatName(String formatName) {
     this.outFormat = checkAllocation(AVOutputFormat.class, avformat.av_guess_format(formatName, null, null));
+    return this;
+  }
+
+  public JCPPTranscode withAudioParams(final AudioParameters params) {
+    this.audioParams = params;
     return this;
   }
 }
