@@ -235,7 +235,7 @@ public class JAVOutputContainer implements AutoCloseable {
 
     // Préparation du format.
     this.formatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    this.formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.AVFMT_FLAG_CUSTOM_IO));
+    this.formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.CUSTOM_IO));
 
     checkAndThrow(avformat.avformat_alloc_output_context2(formatCtx, format, (String) null, null));
     LOG.debug("Flux d'écriture libav ouvert");

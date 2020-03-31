@@ -191,7 +191,7 @@ public class JAVInputContainer implements AutoCloseable {
 
     // Préparation du format.
     this.formatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    this.formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.AVFMT_FLAG_CUSTOM_IO));
+    this.formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.CUSTOM_IO));
     this.formatCtx.pb(ioCtx);
 
     // Ouvre le flux et lit les entêtes. Si inputFormat est null, le format sera deviné en lisant les premier octets.

@@ -77,7 +77,7 @@ public class JCPPInfo {
     ioCtx.write_flag(0);
 
     final AVFormatContext formatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.AVFMT_FLAG_CUSTOM_IO));
+    formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.CUSTOM_IO));
     formatCtx.pb(ioCtx);
 
     // Ouvre le flux et lit les entêtes.

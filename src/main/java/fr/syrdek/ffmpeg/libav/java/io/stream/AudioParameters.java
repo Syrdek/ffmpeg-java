@@ -3,10 +3,9 @@
  */
 package fr.syrdek.ffmpeg.libav.java.io.stream;
 
-import org.bytedeco.javacpp.avformat;
 import org.bytedeco.javacpp.avutil;
+import org.bytedeco.javacpp.avutil.AVRational;
 
-import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
 import fr.syrdek.ffmpeg.libav.java.io.AVSampleFormat;
 
 /**
@@ -19,7 +18,6 @@ public class AudioParameters {
   private final Integer channels;
   private final Long channelsLayout;
   private final Integer sampleRate;
-  private final Integer bitRate;
   private final AVSampleFormat sampleFormat;
 
   /**
@@ -58,11 +56,6 @@ public class AudioParameters {
     this.channelsLayout = channelsLayout;
     this.sampleRate = sampleRate;
     this.sampleFormat = sampleFormat;
-    if (sampleFormat != null) {
-      this.bitRate = avutil.av_get_bytes_per_sample(sampleFormat.value()) * sampleRate;
-    } else {
-      this.bitRate = null;
-    }
   }
 
   /**
@@ -84,13 +77,25 @@ public class AudioParameters {
       final Integer channels,
       final Long channelsLayout,
       final Integer sampleRate,
-      final Integer bitRate) {
+      final Long bitRate) {
     this.codec = codec;
     this.channels = channels;
     this.channelsLayout = channelsLayout;
     this.sampleRate = sampleRate;
-    this.bitRate = bitRate;
     this.sampleFormat = null;
+  }
+
+  /**
+   * Calcule le temps entre 2 samples.<br>
+   * 
+   * @param sampleRate
+   *          Le nombre de samples par seconde.
+   * @param result
+   *          Le temps entre 2 samples, a remplir.
+   * @return Le paramètre result.
+   */
+  public static AVRational computeTimeBase(int sampleRate, AVRational result) {
+    return result.num(1).den(sampleRate);
   }
 
   /**
@@ -129,9 +134,12 @@ public class AudioParameters {
   }
 
   /**
-   * @return the bitRate
+   * @return the sampleFormat
    */
-  public Integer getBitRate() {
-    return bitRate;
+  public Integer getSampleFormatValue() {
+    if (sampleFormat != null) {
+      return sampleFormat.value();
+    }
+    return null;
   }
 }

@@ -6,7 +6,7 @@ package fr.syrdek.ffmpeg.libav.java;
  * @author Syrdek
  *
  */
-public interface CFlag {
+public interface CFlag extends CEnum {
   /**
    * Ajoute un drapeau à la valeur donnée. Si le drapeau est déjà présent, ne fait rien.
    * 
@@ -110,9 +110,4 @@ public interface CFlag {
   static boolean isIn(int flags, int flag) {
     return (flags & flag) != 0;
   }
-
-  /**
-   * @return La valeur numérique du drapeau.
-   */
-  int value();
 }

@@ -83,7 +83,7 @@ public class JCPPTransmux {
     ioInCtx.seekable(0);
 
     inFormatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    inFormatCtx.flags(CFlag.plus(inFormatCtx.flags(), AVFormatFlag.AVFMT_FLAG_CUSTOM_IO));
+    inFormatCtx.flags(CFlag.plus(inFormatCtx.flags(), AVFormatFlag.CUSTOM_IO));
     inFormatCtx.pb(ioInCtx);
 
     // Ouvre le flux et lit les entêtes.
@@ -118,7 +118,7 @@ public class JCPPTransmux {
     ioOutCtx.max_packet_size(BUFFER_SIZE);
 
     outFormatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    outFormatCtx.flags(CFlag.plus(outFormatCtx.flags(), AVFormatFlag.AVFMT_FLAG_CUSTOM_IO));
+    outFormatCtx.flags(CFlag.plus(outFormatCtx.flags(), AVFormatFlag.CUSTOM_IO));
 
     checkAndThrow(avformat.avformat_alloc_output_context2(outFormatCtx, outFormat, (String) null, null));
     outFormatCtx.pb(ioOutCtx);
