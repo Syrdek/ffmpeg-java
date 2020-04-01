@@ -52,18 +52,6 @@ public class FFmpegException extends RuntimeException {
   }
 
   /**
-   * Détermine si le code libav correspond à une fin de traitement.
-   * 
-   * @param returnCode
-   *          Le code retour de libav.
-   * @return <code>true</code> si le code correspond à une fin de traitement.<br>
-   *         <code>false</code> si le code indique que tout s'est bien passé, ou qu'une autre erreur s'est produite.
-   */
-  public static boolean isEOF(int returnCode) {
-    return avutil.AVERROR_EOF == returnCode || avutil.AVERROR_EAGAIN() == returnCode;
-  }
-
-  /**
    * Propage une {@link FFmpegException} si le code FFmpeg donné indique une erreur.
    * 
    * @param returnCode

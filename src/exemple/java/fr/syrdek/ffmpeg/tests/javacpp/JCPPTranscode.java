@@ -2,7 +2,6 @@ package fr.syrdek.ffmpeg.tests.javacpp;
 
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
-import static fr.syrdek.ffmpeg.libav.java.FFmpegException.isEOF;
 
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -17,6 +16,7 @@ import java.util.function.Consumer;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.IntPointer;
 import org.bytedeco.javacpp.LongPointer;
+import org.bytedeco.javacpp.PointerPointer;
 import org.bytedeco.javacpp.avcodec;
 import org.bytedeco.javacpp.avcodec.AVCodec;
 import org.bytedeco.javacpp.avcodec.AVCodecContext;
@@ -28,8 +28,11 @@ import org.bytedeco.javacpp.avformat.AVIOContext;
 import org.bytedeco.javacpp.avformat.AVOutputFormat;
 import org.bytedeco.javacpp.avformat.AVStream;
 import org.bytedeco.javacpp.avutil;
+import org.bytedeco.javacpp.avutil.AVAudioFifo;
 import org.bytedeco.javacpp.avutil.AVDictionary;
 import org.bytedeco.javacpp.avutil.AVFrame;
+import org.bytedeco.javacpp.swresample;
+import org.bytedeco.javacpp.swresample.SwrContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -59,9 +62,9 @@ public class JCPPTranscode {
         final OutputStream out = new FileOutputStream("target/result.mkv")) {
       new JCPPTranscode()
           .withFormatName("matroska")
-//          .withAudioParams(new AudioParameters("mp2", null, null, null, AVSampleFormat.S16))
-//           .withAudioParams(new AudioParameters("ac3", null, null, null, AVSampleFormat.FLTP))
-           .withAudioParams(new AudioParameters("vorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
+          .withAudioParams(new AudioParameters("mp2", null, null, null, AVSampleFormat.S16))
+          // .withAudioParams(new AudioParameters("ac3", null, null, null, AVSampleFormat.FLTP))
+          // .withAudioParams(new AudioParameters("vorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
           // .withVideoParams("libx265", "x265-params", "keyint=60:min-keyint=60:scenecut=0")
           .withMuxerOpt("movflags", "frag_keyframe+empty_moov+default_base_moof")
           .transcode(in, out);
@@ -157,21 +160,28 @@ public class JCPPTranscode {
   }
 
   class StreamInfo implements AutoCloseable {
-    final int type;
-
+    // En entrée.
     final int inIndex;
     final AVCodec inCodec;
     final AVStream inStream;
     final AVCodecContext inCodecCtx;
     final AVCodecParameters inCodecPar;
 
+    // En sortie.
     final int outIndex;
     final AVStream outStream;
     AVCodec outCodec;
     AVCodecContext outCodecCtx;
 
+    // Outils de convertion.
     BiConsumer<AVPacket, AVFrame> transcoder;
     Consumer<AVFrame> encoder;
+
+    final int type;
+    // Tampon de convertion pour gérer les formats de sortie ayant une taille de frame
+    // différente du format d'entrée.
+    private AVAudioFifo audioFifo;
+    private SwrContext swrCtx;
 
     public StreamInfo(int index, AVStream inStream) {
       this.inCodecPar = inStream.codecpar();
@@ -234,68 +244,46 @@ public class JCPPTranscode {
             outCodecCtx.bit_rate());
 
         if (logCodecSupports) {
-          StringBuilder b = new StringBuilder("Sample formats supportes par l'encodeur ")
-              .append(outCodec.name().getString())
-              .append(" '")
-              .append(outCodec.long_name().getString())
-              .append(" :");
-
-          final IntPointer sampleFormats = outCodec.sample_fmts();
-          if (sampleFormats != null) {
-            for (int i = 0;; i++) {
-              int val = sampleFormats.get(i);
-              if (val < 0)
-                break;
-              b.append("  ").append(AVSampleFormat.get(val));
-            }
-            LOG.debug(b.toString());
-          }
-
-          final IntPointer supportedSamplerates = outCodec.supported_samplerates();
-          if (supportedSamplerates != null) {
-            b = new StringBuilder("Sample rates supportes par l'encodeur ")
-                .append(outCodec.name().getString())
-                .append(" '")
-                .append(outCodec.long_name().getString())
-                .append(" :");
-
-            for (int i = 0;; i++) {
-              int val = supportedSamplerates.get(i);
-              if (val <= 0)
-                break;
-              b.append("  ").append(val).append("Hz");
-            }
-            LOG.debug(b.toString());
-          }
-
-          final LongPointer channelLayouts = outCodec.channel_layouts();
-          if (channelLayouts != null) {
-            b = new StringBuilder("Channel layouts supportes par l'encodeur ")
-                .append(outCodec.name().getString())
-                .append(" '")
-                .append(outCodec.long_name().getString())
-                .append(" :");
-
-            for (int i = 0;; i++) {
-              long val = channelLayouts.get(i);
-              if (val <= 0)
-                break;
-              b.append("  ").append(AVChannelLayout.toString(val));
-            }
-            LOG.debug(b.toString());
-          }
+          logAudioCodecSupports(outCodec);
         }
       }
 
+
       encoder = this::encodeAudioFrame;
-      transcoder = this::transcode;
+      if (!shouldResample()) {
+        // Faut-t-il réellement conserver ce cas qui a très peu de chances de se produire ?
+        transcoder = this::transcode;
+      } else {
+        if (inCodecCtx.sample_rate() != outCodecCtx.sample_rate()) {
+          // TODO
+          throw new UnsupportedOperationException("Le resampling avec des sample rate différents n'est pas encore géré.");
+        }
+        
+        // Le transcoding passera par une phase de resampling.
+        audioFifo = checkAllocation(avutil.av_audio_fifo_alloc(outCodecCtx.sample_fmt(), outCodecCtx.channels(), 1));
+        swrCtx = checkAllocation(swresample.swr_alloc_set_opts(null,
+            outCodecCtx.channel_layout(), outCodecCtx.sample_fmt(), outCodecCtx.sample_rate(),
+            inCodecCtx.channel_layout(),  inCodecCtx.sample_fmt(),  inCodecCtx.sample_rate(),
+            0, null));
+        
+        checkAndThrow(swresample.swr_init(swrCtx));
+        transcoder = this::fifoTranscode;
+      }
     }
 
     public void initVideoTranscodage() {
       // TODO
-      throw new UnsupportedOperationException("NOT IMPLEMENTED");
+      throw new UnsupportedOperationException("Le transcodage vidéo n'est pas implémenté.");
     }
 
+    public boolean shouldResample() {
+      return inCodecCtx.frame_size()     !=   outCodecCtx.frame_size()
+          || inCodecCtx.channels()       !=   outCodecCtx.channels()
+          || inCodecCtx.channel_layout() !=   outCodecCtx.channel_layout()
+          || inCodecCtx.sample_fmt()     !=   outCodecCtx.sample_fmt()
+          || inCodecCtx.sample_rate()    !=   outCodecCtx.sample_rate();
+    }
+    
     /**
      * Ecrit un paquet sans le transcoder.
      * 
@@ -304,13 +292,14 @@ public class JCPPTranscode {
      */
     public void writeOutPacket(final AVPacket pkt) {
       pkt.stream_index(outIndex);
-      avcodec.av_packet_rescale_ts(pkt, inCodecCtx.time_base(), outCodecCtx.time_base());
+      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
+      // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
+      avcodec.av_packet_rescale_ts(pkt, inStream.time_base(), outStream.time_base());
       checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, pkt));
-      LOG.debug("Packet wrote !");
     }
 
     /**
-     * Décode et réencode le paquet.
+     * Décode et réencode, paquet par paquet.
      * 
      * @param pkt
      *          Le paquet.
@@ -323,7 +312,7 @@ public class JCPPTranscode {
 
       do {
         ret = avcodec.avcodec_receive_frame(inCodecCtx, frame);
-        if (!isEOF(ret)) {
+        if (ret != avutil.AVERROR_EOF && ret != avutil.AVERROR_EAGAIN()) {
           // Vérifie qu'il n'y a pas eu d'erreur associée au code.
           checkAndThrow(ret);
 
@@ -332,6 +321,50 @@ public class JCPPTranscode {
         }
         // Sinon, le code indique la fin de traitement du paquet. on arrête...
       } while (ret >= 0);
+    }
+
+    /**
+     * Décode et enregistre les paquets dans la fifo, jusqu'à avoir assez de donnée pour les encoder.
+     * 
+     * @param pkt
+     *          Le paquet.
+     * @param frame
+     *          Un conteneur temporaire dans lequel sera stocké le paquet décodé.
+     */
+    public void fifoTranscode(final AVPacket pkt, final AVFrame frame) {
+      int ret = 0;
+      int outFrameSize = outCodecCtx.frame_size();
+      if (avutil.av_audio_fifo_size(audioFifo) < outFrameSize) {
+        checkAndThrow(avcodec.avcodec_send_packet(inCodecCtx, pkt));
+
+        boolean eof = false;
+        do {
+          ret = avcodec.avcodec_receive_packet(outCodecCtx, pkt);
+          if (ret == avutil.AVERROR_EAGAIN()) {
+            // On a besoin de plus de données pour décoder une frame.
+            break;
+          }
+          if (ret == avutil.AVERROR_EOF) {
+            // Le flux a été entièrement traité.
+            eof = true;
+            break;
+          }
+          
+          // Vérifie qu'il n'y a pas eu d'erreur associée au code.
+          checkAndThrow(ret);
+          
+          // Tableau de pointeurs sur les données des channels audio à convertir.
+          final PointerPointer<BytePointer> convertedInputSamples = new PointerPointer<>(2);
+          // Demande à libav d'allouer les buffers pour les samples et de remplir notre tableau avec les adresses de ces buffers.
+          checkAndThrow(avutil.av_samples_alloc(convertedInputSamples, null, outCodecCtx.channels(), frame.nb_samples(), outCodecCtx.sample_fmt(), 0));
+          // 
+          checkAndThrow(swresample.swr_convert(swrCtx, convertedInputSamples, frame.nb_samples(), frame.extended_data(), frame.nb_samples()));
+          
+          
+          avutil.av_freep(convertedInputSamples);
+          convertedInputSamples.deallocate();
+        } while (ret >= 0);
+      }
     }
 
     /**
@@ -347,7 +380,7 @@ public class JCPPTranscode {
       int ret = 0;
       do {
         ret = avcodec.avcodec_receive_packet(outCodecCtx, packet);
-        if (!isEOF(ret)) {
+        if (ret != avutil.AVERROR_EOF && ret != avutil.AVERROR_EAGAIN()) {
           // Vérifie qu'il n'y a pas eu d'erreur associée au code.
           checkAndThrow(ret);
           // Ecrit le paquet.
@@ -361,9 +394,72 @@ public class JCPPTranscode {
 
     @Override
     public void close() {
+      if (swrCtx != null) {
+        swresample.swr_free(swrCtx);
+        swrCtx = null;
+      }
+      
+      if (audioFifo != null) {
+        avutil.av_audio_fifo_free(audioFifo);
+        audioFifo = null;
+      }
       avcodec.avcodec_free_context(inCodecCtx);
     }
+  }
 
+  private void logAudioCodecSupports(AVCodec codec) {
+    if (LOG.isDebugEnabled()) {
+      StringBuilder b = new StringBuilder("Sample formats supportes par l'encodeur ")
+          .append(codec.name().getString())
+          .append(" '")
+          .append(codec.long_name().getString())
+          .append(" :");
+
+      final IntPointer sampleFormats = codec.sample_fmts();
+      if (sampleFormats != null) {
+        for (int i = 0;; i++) {
+          int val = sampleFormats.get(i);
+          if (val < 0)
+            break;
+          b.append("  ").append(AVSampleFormat.get(val));
+        }
+        LOG.debug(b.toString());
+      }
+
+      final IntPointer supportedSamplerates = codec.supported_samplerates();
+      if (supportedSamplerates != null) {
+        b = new StringBuilder("Sample rates supportes par l'encodeur ")
+            .append(codec.name().getString())
+            .append(" '")
+            .append(codec.long_name().getString())
+            .append(" :");
+
+        for (int i = 0;; i++) {
+          int val = supportedSamplerates.get(i);
+          if (val <= 0)
+            break;
+          b.append("  ").append(val).append("Hz");
+        }
+        LOG.debug(b.toString());
+      }
+
+      final LongPointer channelLayouts = codec.channel_layouts();
+      if (channelLayouts != null) {
+        b = new StringBuilder("Channel layouts supportes par l'encodeur ")
+            .append(codec.name().getString())
+            .append(" '")
+            .append(codec.long_name().getString())
+            .append(" :");
+
+        for (int i = 0;; i++) {
+          long val = channelLayouts.get(i);
+          if (val <= 0)
+            break;
+          b.append("  ").append(AVChannelLayout.toString(val));
+        }
+        LOG.debug(b.toString());
+      }
+    }
   }
 
   /**
@@ -416,25 +512,22 @@ public class JCPPTranscode {
     final AVDictionary muxerDict = toAvDictionary(this.muxerOpts);
     checkAndThrow(avformat.avformat_write_header(outFormatCtx, muxerDict));
 
+    final AVFrame frame = avutil.av_frame_alloc();
+
     for (;;) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
-      if (isEOF(ret)) {
-        LOG.debug("Fin de stream atteinte (code={}).", ret);
+      if (ret == avutil.AVERROR_EOF && ret == avutil.AVERROR_EAGAIN()) {
+        // Fin de stream atteinte ou il faut plus de données pour décoder la prochaine frame.
         break;
       }
       // Gestion des autres cas d'erreur.
       checkAndThrow(ret);
 
-      final AVStream inStream = inFormatCtx.streams(packet.stream_index());
-      final AVStream outStream = outFormatCtx.streams(packet.stream_index());
+      final StreamInfo info = infos.get(packet.stream_index());
+      if (info != null) {
+        info.transcoder.accept(packet, frame);
+      }
 
-      packet.stream_index(outStream.index());
-
-      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
-      // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
-      avcodec.av_packet_rescale_ts(packet, inStream.time_base(), outStream.time_base());
-
-      checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
       avcodec.av_packet_unref(packet);
     }
 
@@ -445,6 +538,7 @@ public class JCPPTranscode {
       avutil.av_dict_free(muxerDict);
     }
 
+    avutil.av_frame_free(frame);
     infos.values().forEach(StreamInfo::close);
     avformat.avio_context_free(ioInCtx);
     avformat.avio_context_free(ioOutCtx);
