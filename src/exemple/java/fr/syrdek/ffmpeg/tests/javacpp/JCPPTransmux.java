@@ -235,7 +235,6 @@ public class JCPPTransmux {
 
     while (true) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
-      LOG.debug("...1...");
       if (ret == avutil.AVERROR_EAGAIN() || ret == avutil.AVERROR_EOF) {
         // OK, on a fini.
         break;
@@ -243,18 +242,15 @@ public class JCPPTransmux {
       // Vérifie si on a une erreur bloquante.
       checkAndThrow(ret);
 
-      LOG.debug("...2...");
       int streamInIdx = packet.stream_index();
       final AVStream inStream = inFormatCtx.streams(streamInIdx);
 
-      LOG.debug("...3...");
       int streamOutIdx = streamsMap.getOrDefault(streamInIdx, -1);
       if (streamOutIdx < 0) {
         // Le paquet ne fait pas partie d'un flux qui sera transposé.
         avcodec.av_packet_unref(packet);
         continue;
       }
-      LOG.debug("...4...");
       final AVStream outStream = outFormatCtx.streams(streamOutIdx);
       // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
@@ -263,16 +259,11 @@ public class JCPPTransmux {
       packet.duration(avutil.av_rescale_q(packet.duration(), inStream.time_base(), outStream.time_base()));
       packet.pos(-1); // -1 = inconnu pour laisser libav le calculer.
 
-      LOG.debug("...5...");
       checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
-      LOG.debug("...6...");
       avcodec.av_packet_unref(packet);
-      LOG.debug("...7...");
     }
 
-    LOG.debug("...8...");
     checkAndThrow(avformat.av_write_trailer(outFormatCtx));
-    LOG.debug("...9...");
     avformat.avformat_close_input(inFormatCtx);
 
     avformat.avformat_free_context(outFormatCtx);

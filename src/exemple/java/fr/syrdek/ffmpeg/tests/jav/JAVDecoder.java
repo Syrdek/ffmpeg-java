@@ -47,7 +47,6 @@ public class JAVDecoder {
     final int[] nbframe = new int[] { 0 };
     final long[] oldPts = new long[] { 0 };
     try (final JAVInputContainer container = new JAVInputContainer.Builder().build(in)) {
-
       container.readFully(packet -> {
         nbpkt[0]++;
         final JAVInputStream origin = packet.getOrigin();
