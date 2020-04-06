@@ -54,9 +54,6 @@ public class JAVDecoder {
         final AVPacket avpkt = packet.getPacket();
         final AVStream avstream = origin.getAvstream();
         final AVRational timebase = avstream.time_base();
-        LOG.info("media={}, packet={}, frame={}, timebase={}/{}, duration={}, PTS={}, DTS={}", origin.getMedia(),
-            nbpkt[0], nbframe[0], timebase.num(), timebase.den(), avpkt.duration(), avpkt.pts(), avpkt.dts());
-        
         origin.decode(packet, frame -> {
           nbframe[0]++;
           final AVFrame avframe = frame.getFrame();
