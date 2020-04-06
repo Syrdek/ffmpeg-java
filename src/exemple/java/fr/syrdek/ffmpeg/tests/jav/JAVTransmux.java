@@ -66,14 +66,13 @@ public class JAVTransmux {
       // Ecrite les entêtes.
       outContainer.writeHeaders();
       
-      JAVPacket packet = null;
       // Transfert chaque paquet de donnée provenant du flux en entrée vers le flux en sortie correspondant/
-      while ((packet = inContainer.readPacket()) != null) {
+      inContainer.readFully(packet -> {
         final JAVOutputStream outStream = streamMaps.get(packet.getOrigin());
         if (outStream != null) {
           outStream.writeEncodedPacket(packet);
         }
-      }
+      });
       
       // Ecrit le pied du fichier.
       outContainer.writeTrailer();

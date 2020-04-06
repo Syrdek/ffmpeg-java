@@ -27,6 +27,7 @@ import org.bytedeco.javacpp.avformat.AVFormatContext;
 import org.bytedeco.javacpp.avformat.AVIOContext;
 import org.bytedeco.javacpp.avformat.AVOutputFormat;
 import org.bytedeco.javacpp.avformat.AVStream;
+import org.bytedeco.javacpp.avformat.av_format_control_message;
 import org.bytedeco.javacpp.avutil;
 import org.bytedeco.javacpp.avutil.AVAudioFifo;
 import org.bytedeco.javacpp.avutil.AVDictionary;
@@ -62,9 +63,9 @@ public class JCPPTranscode {
         final OutputStream out = new FileOutputStream("target/result.mkv")) {
       new JCPPTranscode()
           .withFormatName("matroska")
-          .withAudioParams(new AudioParameters("mp2", null, null, null, AVSampleFormat.S16))
+          // .withAudioParams(new AudioParameters("mp2", null, null, null, AVSampleFormat.S16))
           // .withAudioParams(new AudioParameters("ac3", null, null, null, AVSampleFormat.FLTP))
-          // .withAudioParams(new AudioParameters("vorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
+          .withAudioParams(new AudioParameters("libvorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
           // .withVideoParams("libx265", "x265-params", "keyint=60:min-keyint=60:scenecut=0")
           .withMuxerOpt("movflags", "frag_keyframe+empty_moov+default_base_moof")
           .transcode(in, out);
@@ -172,6 +173,7 @@ public class JCPPTranscode {
     final AVStream outStream;
     AVCodec outCodec;
     AVCodecContext outCodecCtx;
+    int outPts = 0;
 
     // Outils de convertion.
     BiConsumer<AVPacket, AVFrame> transcoder;
@@ -229,7 +231,7 @@ public class JCPPTranscode {
       outCodecCtx.sample_fmt(getOrDefault(audioParams.getSampleFormatValue(), inCodecCtx.sample_fmt()));
       AudioParameters.computeTimeBase(outCodecCtx.sample_rate(), outCodecCtx.time_base());
 
-      outCodecCtx.strict_std_compliance(AVEncodingCompliance.EXPERIMENTAL.value());
+      outCodecCtx.strict_std_compliance(AVEncodingCompliance.NORMAL.value());
 
       outStream.time_base(outCodecCtx.time_base());
       checkAllocation("Echec d'ouverture du codec audio", avcodec.avcodec_open2(outCodecCtx, outCodec, (AVDictionary) null));
@@ -248,7 +250,6 @@ public class JCPPTranscode {
         }
       }
 
-
       encoder = this::encodeAudioFrame;
       if (!shouldResample()) {
         // Faut-t-il réellement conserver ce cas qui a très peu de chances de se produire ?
@@ -258,16 +259,16 @@ public class JCPPTranscode {
           // TODO
           throw new UnsupportedOperationException("Le resampling avec des sample rate différents n'est pas encore géré.");
         }
-        
+
         // Le transcoding passera par une phase de resampling.
         audioFifo = checkAllocation(avutil.av_audio_fifo_alloc(outCodecCtx.sample_fmt(), outCodecCtx.channels(), 1));
         swrCtx = checkAllocation(swresample.swr_alloc_set_opts(null,
             outCodecCtx.channel_layout(), outCodecCtx.sample_fmt(), outCodecCtx.sample_rate(),
-            inCodecCtx.channel_layout(),  inCodecCtx.sample_fmt(),  inCodecCtx.sample_rate(),
+            inCodecCtx.channel_layout(), inCodecCtx.sample_fmt(), inCodecCtx.sample_rate(),
             0, null));
-        
+
         checkAndThrow(swresample.swr_init(swrCtx));
-        transcoder = this::fifoTranscode;
+        transcoder = this::resampleAndTranscode;
       }
     }
 
@@ -277,13 +278,13 @@ public class JCPPTranscode {
     }
 
     public boolean shouldResample() {
-      return inCodecCtx.frame_size()     !=   outCodecCtx.frame_size()
-          || inCodecCtx.channels()       !=   outCodecCtx.channels()
-          || inCodecCtx.channel_layout() !=   outCodecCtx.channel_layout()
-          || inCodecCtx.sample_fmt()     !=   outCodecCtx.sample_fmt()
-          || inCodecCtx.sample_rate()    !=   outCodecCtx.sample_rate();
+      return inCodecCtx.frame_size() != outCodecCtx.frame_size()
+          || inCodecCtx.channels() != outCodecCtx.channels()
+          || inCodecCtx.channel_layout() != outCodecCtx.channel_layout()
+          || inCodecCtx.sample_fmt() != outCodecCtx.sample_fmt()
+          || inCodecCtx.sample_rate() != outCodecCtx.sample_rate();
     }
-    
+
     /**
      * Ecrit un paquet sans le transcoder.
      * 
@@ -307,6 +308,7 @@ public class JCPPTranscode {
      *          Un conteneur temporaire dans lequel sera stocké le paquet décodé.
      */
     public void transcode(final AVPacket pkt, final AVFrame frame) {
+      LOG.debug("Trancode packet");
       checkAndThrow(avcodec.avcodec_send_packet(inCodecCtx, pkt));
       int ret;
 
@@ -331,39 +333,115 @@ public class JCPPTranscode {
      * @param frame
      *          Un conteneur temporaire dans lequel sera stocké le paquet décodé.
      */
-    public void fifoTranscode(final AVPacket pkt, final AVFrame frame) {
+    public void resampleAndTranscode(final AVPacket pkt, final AVFrame frame) {
       int ret = 0;
-      int outFrameSize = outCodecCtx.frame_size();
-      if (avutil.av_audio_fifo_size(audioFifo) < outFrameSize) {
-        checkAndThrow(avcodec.avcodec_send_packet(inCodecCtx, pkt));
 
-        boolean eof = false;
+      checkAndThrow(avcodec.avcodec_send_packet(inCodecCtx, pkt));
+
+      do {
+        // On remplit la fifo avec les données décodées.
+        ret = avcodec.avcodec_receive_frame(inCodecCtx, frame);
+        if (ret == avutil.AVERROR_EAGAIN()) {
+          // On a besoin de plus de données pour décoder une frame.
+          break;
+        }
+        if (ret == avutil.AVERROR_EOF) {
+          // Le flux a été entièrement traité.
+          // Envoie toutes les données restantes dans la fifo à l'encodeur.
+          pullFromFifoToEncoder(true);
+          return;
+        }
+
+        // Vérifie qu'il n'y a pas eu d'erreur associée au code.
+        checkAndThrow(ret);
+
+        resampleAndPushToFifo(frame);
+      } while (ret >= 0);
+
+      // Traite toutes les données qui sont prêtes à être encodées.
+      pullFromFifoToEncoder(false);
+    }
+
+    /**
+     * Convertit la frame et la pousse dans la fifo.
+     * TODO: Beaucoup d'allocations à chaque frame, il faudrait peut-être garder des buffers. Ne pas garder dans le framework.
+     * 
+     * @param frame
+     *          La frame à traiter et enregistrer dans la fifo.
+     */
+    private void resampleAndPushToFifo(final AVFrame frame) {
+      // Tableau de pointeurs sur les données des channels audio à convertir.
+      final PointerPointer<BytePointer> convertedInputSamples = new PointerPointer<>(2);
+      // Demande à libav d'allouer les buffers pour les samples et de remplir notre tableau avec les adresses de ces buffers.
+      checkAndThrow(avutil.av_samples_alloc(convertedInputSamples, null, outCodecCtx.channels(), frame.nb_samples(), outCodecCtx.sample_fmt(), 0));
+      // Convertit les frames au format cible.
+      checkAndThrow(swresample.swr_convert(swrCtx, convertedInputSamples, frame.nb_samples(), frame.extended_data(), frame.nb_samples()));
+
+      // Aggrandit la fifo pour contenir les nouveaux samples.
+      avutil.av_audio_fifo_realloc(audioFifo, avutil.av_audio_fifo_size(audioFifo) + frame.nb_samples());
+      // Ecrit la nouvelle donnée dans la fifo.
+      avutil.av_audio_fifo_write(audioFifo, convertedInputSamples, frame.nb_samples());
+
+      // Nettoie les buffers temporaires.
+      avutil.av_freep(convertedInputSamples);
+      convertedInputSamples.deallocate();
+    }
+
+    /**
+     * Dépile les frames depuis la fifo, et les envoie à l'encodeur.
+     * 
+     * @param untilEnd
+     *          <code>true</code> pour dépiler la fifo jusqu'au bout (c'est-à-dire qu'on aura plus de nouvelle donnée à écrire, et qu'on peut terminer l'envoi à l'encodeur par une frame incomplète),<br>
+     *          <code>false</code> pour ne la dépiler que si suffisamment de données sont prêtes pour être encodées dans une frame complète.
+     */
+    private void pullFromFifoToEncoder(final boolean untilEnd) {
+      int fifoSize = avutil.av_audio_fifo_size(audioFifo);
+      while (
+      // Dépile tant qu'on a assez de données pour remplir une frame.
+      fifoSize >= outCodecCtx.frame_size()
+          // Dépile jusqu'au bout.
+          || untilEnd && fifoSize > 0) {
+
+        // TODO: allouer la frame de sortie une fois et la réutiliser.
+        final AVFrame frame = checkAllocation(avutil.av_frame_alloc());
+        frame.nb_samples(outCodecCtx.frame_size());
+        frame.channel_layout(outCodecCtx.channel_layout());
+        frame.format(outCodecCtx.sample_fmt());
+        frame.sample_rate(outCodecCtx.sample_rate());
+
+        checkAndThrow(avutil.av_frame_get_buffer(frame, 0));
+
+        checkAndThrow(avutil.av_audio_fifo_read(audioFifo, frame.data(), outCodecCtx.frame_size()));
+
+//        frame.pts(outPts);
+//        frame.pkt_dts(outPts);
+//        outPts += frame.nb_samples();
+        LOG.debug("Frame dts={}, pts={}", frame.pkt_dts(), frame.pts());
+        
+        final AVPacket packet = avcodec.av_packet_alloc();
+        checkAndThrow(avcodec.avcodec_send_frame(outCodecCtx, frame));
+
+        int ret = 0;
         do {
-          ret = avcodec.avcodec_receive_packet(outCodecCtx, pkt);
-          if (ret == avutil.AVERROR_EAGAIN()) {
-            // On a besoin de plus de données pour décoder une frame.
-            break;
+          ret = avcodec.avcodec_receive_packet(outCodecCtx, packet);
+          if (ret != avutil.AVERROR_EOF && ret != avutil.AVERROR_EAGAIN()) {
+            // Vérifie qu'il n'y a pas eu d'erreur associée au code.
+            checkAndThrow(ret);
+            outPts = 876;
+            packet.dts(outPts);
+            packet.pts(outPts);
+            
+            LOG.debug("Packet dts={}, pts={}", packet.dts(), packet.pts());
+            // Ecrit le paquet.
+            checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, packet));
           }
-          if (ret == avutil.AVERROR_EOF) {
-            // Le flux a été entièrement traité.
-            eof = true;
-            break;
-          }
-          
-          // Vérifie qu'il n'y a pas eu d'erreur associée au code.
-          checkAndThrow(ret);
-          
-          // Tableau de pointeurs sur les données des channels audio à convertir.
-          final PointerPointer<BytePointer> convertedInputSamples = new PointerPointer<>(2);
-          // Demande à libav d'allouer les buffers pour les samples et de remplir notre tableau avec les adresses de ces buffers.
-          checkAndThrow(avutil.av_samples_alloc(convertedInputSamples, null, outCodecCtx.channels(), frame.nb_samples(), outCodecCtx.sample_fmt(), 0));
-          // 
-          checkAndThrow(swresample.swr_convert(swrCtx, convertedInputSamples, frame.nb_samples(), frame.extended_data(), frame.nb_samples()));
-          
-          
-          avutil.av_freep(convertedInputSamples);
-          convertedInputSamples.deallocate();
         } while (ret >= 0);
+
+        avcodec.av_packet_unref(packet);
+        avcodec.av_packet_free(packet);
+
+        fifoSize = avutil.av_audio_fifo_size(audioFifo);
+        avutil.av_frame_free(frame);
       }
     }
 
@@ -398,7 +476,7 @@ public class JCPPTranscode {
         swresample.swr_free(swrCtx);
         swrCtx = null;
       }
-      
+
       if (audioFifo != null) {
         avutil.av_audio_fifo_free(audioFifo);
         audioFifo = null;
@@ -516,7 +594,7 @@ public class JCPPTranscode {
 
     for (;;) {
       int ret = avformat.av_read_frame(inFormatCtx, packet);
-      if (ret == avutil.AVERROR_EOF && ret == avutil.AVERROR_EAGAIN()) {
+      if (ret == avutil.AVERROR_EOF || ret == avutil.AVERROR_EAGAIN()) {
         // Fin de stream atteinte ou il faut plus de données pour décoder la prochaine frame.
         break;
       }

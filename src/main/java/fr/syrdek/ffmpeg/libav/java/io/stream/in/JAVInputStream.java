@@ -7,13 +7,14 @@ import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
 
 import java.text.MessageFormat;
+import java.util.function.Consumer;
 
 import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avformat;
 import org.bytedeco.javacpp.avcodec.AVCodec;
 import org.bytedeco.javacpp.avcodec.AVCodecContext;
 import org.bytedeco.javacpp.avcodec.AVCodecParameters;
 import org.bytedeco.javacpp.avcodec.AVPacket;
+import org.bytedeco.javacpp.avformat;
 import org.bytedeco.javacpp.avformat.AVFormatContext;
 import org.bytedeco.javacpp.avformat.AVStream;
 import org.bytedeco.javacpp.avutil;
@@ -24,10 +25,13 @@ import org.slf4j.LoggerFactory;
 
 import fr.syrdek.ffmpeg.libav.java.FFmpegException;
 import fr.syrdek.ffmpeg.libav.java.Media;
+import fr.syrdek.ffmpeg.libav.java.io.container.JAVFrame;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
+import fr.syrdek.ffmpeg.libav.java.io.container.JAVPacket;
 
 /**
- * Représente un flux entrant au sein d'un conteneur (par exemple audio ou video).
+ * Représente un flux entrant au sein d'un conteneur (par exemple audio ou
+ * video).
  * 
  * @author Syrdek
  */
@@ -45,13 +49,15 @@ public abstract class JAVInputStream implements AutoCloseable {
   protected final AVCodecContext codecCtx;
   protected final AVCodec codec;
 
+  // Stockage d'un paquet de données décodées.
+  protected final AVFrame frame;
+
   /**
-   * Construit un {@link JAVInputStream} à partir d'un {@link AVStream} provenant de libav.
+   * Construit un {@link JAVInputStream} à partir d'un {@link AVStream} provenant
+   * de libav.
    * 
-   * @param container
-   *          La conteneur du flux.
-   * @param avstream
-   *          Le flux.
+   * @param container La conteneur du flux.
+   * @param avstream  Le flux.
    * @return Le {@link JAVInputStream} construit.
    */
   public static JAVInputStream create(final JAVInputContainer container, final AVStream avstream) {
@@ -68,10 +74,8 @@ public abstract class JAVInputStream implements AutoCloseable {
   /**
    * Construit un flux.
    * 
-   * @param avstream
-   *          Le flux libav.
-   * @param formatCtx
-   *          Le format contenant le flux.
+   * @param avstream  Le flux libav.
+   * @param formatCtx Le format contenant le flux.
    */
   protected JAVInputStream(final JAVInputContainer container, final AVStream avstream) {
     this.container = container;
@@ -85,6 +89,7 @@ public abstract class JAVInputStream implements AutoCloseable {
     checkAndThrow(avcodec.avcodec_parameters_to_context(codecCtx, codecParams));
     checkAndThrow(avcodec.avcodec_open2(codecCtx, codec, (AVDictionary) null));
 
+    this.frame = avutil.av_frame_alloc();
   }
 
   /**
@@ -102,39 +107,51 @@ public abstract class JAVInputStream implements AutoCloseable {
   }
 
   /**
-   * Decode le flux.
+   * Lit entièrement le flux, et envoie les paquets au consumer donné, au fur et à
+   * mesure de la lecture.
+   * 
+   * @param packetConsumer Le consumer auquel envoyer les paquets lus.
    */
-  public void decode() {
-    // Préalloue un paquet et une frame qui contiendront les données à décoder.
+  public void readFully(final Consumer<JAVPacket> packetConsumer) {
+    // Préalloue un paquet qui contiendra les données encodées.
     final AVPacket packet = checkAllocation(AVPacket.class, avcodec.av_packet_alloc());
-    final AVFrame frame = checkAllocation(AVFrame.class, avutil.av_frame_alloc());
-    final AVFormatContext formatCtx = container.getFormatCtx();
-
     try {
+      final AVFormatContext formatCtx = container.getFormatCtx();
       // Lit un paquet de données brutes depuis le flux.
       while (avformat.av_read_frame(formatCtx, packet) >= 0) {
         // Décode le paquet lu.
-        decodePacket(codecCtx, packet, frame);
+        packetConsumer.accept(new JAVPacket(this, packet));
       }
+      // Libère le paquet.
+      avcodec.av_packet_unref(packet);
     } finally {
-      avutil.av_frame_free(frame);
+      // Nettoie la mémoire.
       avcodec.av_packet_free(packet);
     }
   }
 
   /**
-   * Décode un paquet de données.
+   * Decode entièrement le flux et le décode. Envoie les paquets décodés au
+   * consumer donné.
    * 
-   * @param codecCtx
-   *          Le contexte du codec à utiliser.
-   * @param packet
-   *          Le paquet à décoder.
-   * @param frame
-   *          La frame à remplir avec les données décodées.
+   * @param frameConsumer Le consumer recevant les paquets décodés.
    */
-  private void decodePacket(final AVCodecContext codecCtx, final AVPacket packet, final AVFrame frame) {
-    // Envoie le paquet récupéré au codec pour décodage.
-    int ret = FFmpegException.checkAndThrow(avcodec.avcodec_send_packet(codecCtx, packet));
+  public void decodeFully(final Consumer<JAVFrame> frameConsumer) {
+    readFully(t -> this.decode(t, frameConsumer));
+  }
+  
+  /**
+   * Décode un paquet de données, et renvoie les frames issues de ce paquet au
+   * consumer donné.<br>
+   * Un paquet à décoder peut contenir de 0 à plusieurs frames. Le cas le plus
+   * fréquent étant une frame de données.
+   * 
+   * @param packet        Le paquet à décoder.
+   * @param frameConsumer Le consumer qui sera appelé pour chaque frame décodée.
+   */
+  public void decode(final JAVPacket packet, final Consumer<JAVFrame> frameConsumer) {
+    // Envoie le paquet récupéré au codec pour décodage.    
+    int ret = FFmpegException.checkAndThrow(avcodec.avcodec_send_packet(codecCtx, packet.getPacket()));
     while (ret >= 0) {
       // Récupère la frame décodée par le codec.
       ret = avcodec.avcodec_receive_frame(codecCtx, frame);
@@ -144,12 +161,19 @@ public abstract class JAVInputStream implements AutoCloseable {
       }
       // Les autres codes d'erreur sont graves.
       FFmpegException.checkAndThrow(ret);
+
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Frame : Size={}, number={}, PTS={}, DTS={}, key_frame={}", frame.pkt_size(), codecCtx.frame_number(), frame.pts(), frame.pkt_dts(), frame.key_frame());
+        LOG.debug("Frame : Size={}, number={}, PTS={}, DTS={}, key_frame={}", frame.pkt_size(), codecCtx.frame_number(),
+            frame.pts(), frame.pkt_dts(), frame.key_frame());
       }
+
+      frameConsumer.accept(new JAVFrame(this, frame));
+      
+      // Libère la frame.
+      avutil.av_frame_unref(frame);
     }
   }
-  
+
   /**
    * @return Le media traité par ce flux.
    */
@@ -161,7 +185,8 @@ public abstract class JAVInputStream implements AutoCloseable {
    * Une description du flux.
    */
   public String toString() {
-    return MessageFormat.format("Flux [type={0}, codec={1}, id={2}]", codecParams.codec_type(), codec.long_name().getString(), codec.id());
+    return MessageFormat.format("Flux [type={0}, codec={1}, id={2}]", codecParams.codec_type(),
+        codec.long_name().getString(), codec.id());
   }
 
   @Override
@@ -171,6 +196,9 @@ public abstract class JAVInputStream implements AutoCloseable {
 
   @Override
   public void close() {
-    avcodec.avcodec_free_context(codecCtx);
+    if (frame != null)
+      avutil.av_frame_free(frame);
+    if (codecCtx != null)
+      avcodec.avcodec_free_context(codecCtx);
   }
 }
