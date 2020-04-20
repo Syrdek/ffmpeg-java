@@ -27,7 +27,6 @@ import org.bytedeco.javacpp.avformat.AVFormatContext;
 import org.bytedeco.javacpp.avformat.AVIOContext;
 import org.bytedeco.javacpp.avformat.AVOutputFormat;
 import org.bytedeco.javacpp.avformat.AVStream;
-import org.bytedeco.javacpp.avformat.av_format_control_message;
 import org.bytedeco.javacpp.avutil;
 import org.bytedeco.javacpp.avutil.AVAudioFifo;
 import org.bytedeco.javacpp.avutil.AVDictionary;
@@ -52,23 +51,25 @@ import fr.syrdek.ffmpeg.tests.Utils;
  * 
  * @author Syrdek
  */
-public class JCPPTranscode_non_vorbis {
-  private static final Logger LOG = LoggerFactory.getLogger(JCPPTranscode_non_vorbis.class);
+public class JCPPTranscode {
+  private static final Logger LOG = LoggerFactory.getLogger(JCPPTranscode.class);
   private static final int BUFFER_SIZE = 256 * 1024;
 
   public static void main(String[] args) throws Exception {
     Utils.cleanup();
 
     try (final InputStream in = new FileInputStream("samples/video.mp4");
-        final OutputStream out = new FileOutputStream("target/result.mkv")) {
-      new JCPPTranscode_non_vorbis()
-          .withFormatName("matroska")
+        final OutputStream out = new FileOutputStream("target/result.ogg")) {
+      new JCPPTranscode()
+          .withFormatName("ogg")
+          // .withFormatName("matroska")
           // .withAudioParams(new AudioParameters("mp2", null, null, null, AVSampleFormat.S16))
           // .withAudioParams(new AudioParameters("ac3", null, null, null, AVSampleFormat.FLTP))
-          .withAudioParams(new AudioParameters("aac", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
-//          .withAudioParams(new AudioParameters("vorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
-          // .withVideoParams("libx265", "x265-params", "keyint=60:min-keyint=60:scenecut=0")
-          .withMuxerOpt("movflags", "frag_keyframe+empty_moov+default_base_moof")
+          // .withAudioParams(new AudioParameters("aac", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000,
+          // AVSampleFormat.FLTP))
+          .withAudioParams(new AudioParameters("vorbis", 2, AVChannelLayout.LAYOUT_STEREO.value(), 48000, AVSampleFormat.FLTP))
+          // .withVideoParams("theora")
+          // .withMuxerOpt("movflags", "frag_keyframe+empty_moov+default_base_moof")
           .transcode(in, out);
     } catch (Exception e) {
       LOG.error("Erreur dans le main", e);
@@ -204,12 +205,9 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Retourne src si non nul, sinon, retourne def.
      * 
-     * @param <T>
-     *          Le type de paramètre à retourner.
-     * @param src
-     *          La valeur a retourner si non nul.
-     * @param def
-     *          La valeur a retourner si src est nul.
+     * @param <T> Le type de paramètre à retourner.
+     * @param src La valeur a retourner si non nul.
+     * @param def La valeur a retourner si src est nul.
      * @return La valeur.
      */
     public <T> T getOrDefault(T src, T def) {
@@ -224,7 +222,8 @@ public class JCPPTranscode_non_vorbis {
     }
 
     public void initAudioTranscodage() {
-      outCodec = checkAllocation("L'encodeur " + audioParams.getCodec() + " est introuvable", avcodec.avcodec_find_encoder_by_name(audioParams.getCodec()));
+      outCodec = checkAllocation("L'encodeur " + audioParams.getCodec() + " est introuvable",
+          avcodec.avcodec_find_encoder_by_name(audioParams.getCodec()));
       outCodecCtx = checkAllocation(avcodec.avcodec_alloc_context3(outCodec));
       outCodecCtx.channels(getOrDefault(audioParams.getChannels(), inCodecCtx.channels()));
       outCodecCtx.channel_layout(getOrDefault(audioParams.getChannelsLayout(), inCodecCtx.channel_layout()));
@@ -235,7 +234,8 @@ public class JCPPTranscode_non_vorbis {
       outCodecCtx.strict_std_compliance(AVEncodingCompliance.EXPERIMENTAL.value());
 
       outStream.time_base(outCodecCtx.time_base());
-      checkAllocation("Echec d'ouverture du codec audio", avcodec.avcodec_open2(outCodecCtx, outCodec, (AVDictionary) null));
+      checkAllocation("Echec d'ouverture du codec audio",
+          avcodec.avcodec_open2(outCodecCtx, outCodec, (AVDictionary) null));
       checkAndThrow(avcodec.avcodec_parameters_from_context(outStream.codecpar(), outCodecCtx));
 
       if (LOG.isDebugEnabled()) {
@@ -258,7 +258,8 @@ public class JCPPTranscode_non_vorbis {
       } else {
         if (inCodecCtx.sample_rate() != outCodecCtx.sample_rate()) {
           // TODO
-          throw new UnsupportedOperationException("Le resampling avec des sample rate différents n'est pas encore géré.");
+          throw new UnsupportedOperationException(
+              "Le resampling avec des sample rate différents n'est pas encore géré.");
         }
 
         // Le transcoding passera par une phase de resampling.
@@ -289,12 +290,12 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Ecrit un paquet sans le transcoder.
      * 
-     * @param pkt
-     *          Le paquet a écrire.
+     * @param pkt Le paquet a écrire.
      */
     public void writeOutPacket(final AVPacket pkt) {
       pkt.stream_index(outIndex);
-      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
+      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la
+      // nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
       avcodec.av_packet_rescale_ts(pkt, inStream.time_base(), outStream.time_base());
       checkAndThrow(avformat.av_interleaved_write_frame(outFormatCtx, pkt));
@@ -303,10 +304,8 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Décode et réencode, paquet par paquet.
      * 
-     * @param pkt
-     *          Le paquet.
-     * @param frame
-     *          Un conteneur temporaire dans lequel sera stocké le paquet décodé.
+     * @param pkt   Le paquet.
+     * @param frame Un conteneur temporaire dans lequel sera stocké le paquet décodé.
      */
     public void transcode(final AVPacket pkt, final AVFrame frame) {
       checkAndThrow(avcodec.avcodec_send_packet(inCodecCtx, pkt));
@@ -328,10 +327,8 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Décode et enregistre les paquets dans la fifo, jusqu'à avoir assez de donnée pour les encoder.
      * 
-     * @param pkt
-     *          Le paquet.
-     * @param frame
-     *          Un conteneur temporaire dans lequel sera stocké le paquet décodé.
+     * @param pkt   Le paquet.
+     * @param frame Un conteneur temporaire dans lequel sera stocké le paquet décodé.
      */
     public void resampleAndTranscode(final AVPacket pkt, final AVFrame frame) {
       int ret = 0;
@@ -363,19 +360,20 @@ public class JCPPTranscode_non_vorbis {
     }
 
     /**
-     * Convertit la frame et la pousse dans la fifo.
-     * TODO: Beaucoup d'allocations à chaque frame, il faudrait peut-être garder des buffers. Ne pas garder dans le framework.
+     * Convertit la frame et la pousse dans la fifo. TODO: Beaucoup d'allocations à chaque frame, il faudrait peut-être garder des buffers. Ne pas garder dans le framework.
      * 
-     * @param frame
-     *          La frame à traiter et enregistrer dans la fifo.
+     * @param frame La frame à traiter et enregistrer dans la fifo.
      */
     private void resampleAndPushToFifo(final AVFrame frame) {
       // Tableau de pointeurs sur les données des channels audio à convertir.
       final PointerPointer<BytePointer> convertedInputSamples = new PointerPointer<>(2);
-      // Demande à libav d'allouer les buffers pour les samples et de remplir notre tableau avec les adresses de ces buffers.
-      checkAndThrow(avutil.av_samples_alloc(convertedInputSamples, null, outCodecCtx.channels(), frame.nb_samples(), outCodecCtx.sample_fmt(), 0));
+      // Demande à libav d'allouer les buffers pour les samples et de remplir notre tableau avec les adresses de ces
+      // buffers.
+      checkAndThrow(avutil.av_samples_alloc(convertedInputSamples, null, outCodecCtx.channels(), frame.nb_samples(),
+          outCodecCtx.sample_fmt(), 0));
       // Convertit les frames au format cible.
-      checkAndThrow(swresample.swr_convert(swrCtx, convertedInputSamples, frame.nb_samples(), frame.extended_data(), frame.nb_samples()));
+      checkAndThrow(swresample.swr_convert(swrCtx, convertedInputSamples, frame.nb_samples(), frame.extended_data(),
+          frame.nb_samples()));
 
       // Aggrandit la fifo pour contenir les nouveaux samples.
       avutil.av_audio_fifo_realloc(audioFifo, avutil.av_audio_fifo_size(audioFifo) + frame.nb_samples());
@@ -390,9 +388,9 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Dépile les frames depuis la fifo, et les envoie à l'encodeur.
      * 
-     * @param untilEnd
-     *          <code>true</code> pour dépiler la fifo jusqu'au bout (c'est-à-dire qu'on aura plus de nouvelle donnée à écrire, et qu'on peut terminer l'envoi à l'encodeur par une frame incomplète),<br>
-     *          <code>false</code> pour ne la dépiler que si suffisamment de données sont prêtes pour être encodées dans une frame complète.
+     * @param untilEnd <code>true</code> pour dépiler la fifo jusqu'au bout (c'est-à-dire qu'on aura plus de nouvelle donnée à écrire, et qu'on peut terminer l'envoi à l'encodeur
+     *                 par une frame incomplète),<br>
+     *                 <code>false</code> pour ne la dépiler que si suffisamment de données sont prêtes pour être encodées dans une frame complète.
      */
     private void pullFromFifoToEncoder(final boolean untilEnd) {
       int fifoSize = avutil.av_audio_fifo_size(audioFifo);
@@ -412,7 +410,7 @@ public class JCPPTranscode_non_vorbis {
         checkAndThrow(avutil.av_frame_get_buffer(frame, 0));
 
         checkAndThrow(avutil.av_audio_fifo_read(audioFifo, frame.data(), outCodecCtx.frame_size()));
-        
+
         final AVPacket packet = avcodec.av_packet_alloc();
         checkAndThrow(avcodec.avcodec_send_frame(outCodecCtx, frame));
 
@@ -425,8 +423,7 @@ public class JCPPTranscode_non_vorbis {
             packet.dts(outPts);
             packet.pts(outPts);
             outPts += packet.duration();
-            
-            LOG.debug("Packet dts={}, pts={}, duration={}", packet.dts(), packet.pts(), packet.duration());
+
             // Ecrit le paquet.
             ret = avformat.av_interleaved_write_frame(outFormatCtx, packet);
             checkAndThrow(ret);
@@ -444,8 +441,7 @@ public class JCPPTranscode_non_vorbis {
     /**
      * Encode une frame audio.
      * 
-     * @param frame
-     *          La frame à encoder.
+     * @param frame La frame à encoder.
      */
     public void encodeAudioFrame(final AVFrame frame) {
       final AVPacket packet = avcodec.av_packet_alloc();
@@ -557,26 +553,25 @@ public class JCPPTranscode_non_vorbis {
       StreamInfo info = null;
       switch (codecPar.codec_type()) {
       case avutil.AVMEDIA_TYPE_AUDIO:
-        info = new StreamInfo(i, inStream);
         if (audioParams != null) {
+          info = new StreamInfo(i, inStream);
           info.initAudioTranscodage();
-        } else {
-          info.initStreamCopy();
         }
         break;
       case avutil.AVMEDIA_TYPE_VIDEO:
-        info = new StreamInfo(i, inStream);
         if (videoParams != null) {
+          info = new StreamInfo(i, inStream);
           info.initVideoTranscodage();
         } else {
-          info.initStreamCopy();
+          info = null;
         }
         break;
       default:
         continue;
       }
 
-      infos.put(i, info);
+      if (info != null)
+        infos.put(i, info);
     }
 
     if (CFlag.isIn(outFormat.flags(), avformat.AVFMT_GLOBALHEADER)) {
@@ -634,17 +629,18 @@ public class JCPPTranscode_non_vorbis {
     return avmuxer;
   }
 
-  public JCPPTranscode_non_vorbis withFormatName(String formatName) {
+  public JCPPTranscode withFormatName(String formatName) {
     this.outFormat = checkAllocation("Format " + formatName + " inconnu", avformat.av_guess_format(formatName, null, null));
+    LOG.debug("Format de sortie : {} ({})", outFormat.long_name().getString(), outFormat.name().getString());
     return this;
   }
 
-  public JCPPTranscode_non_vorbis withAudioParams(final AudioParameters params) {
+  public JCPPTranscode withAudioParams(final AudioParameters params) {
     this.audioParams = params;
     return this;
   }
 
-  public JCPPTranscode_non_vorbis withMuxerOpt(String key, String val) {
+  public JCPPTranscode withMuxerOpt(String key, String val) {
     muxerOpts.put(key, val);
     return this;
   }
