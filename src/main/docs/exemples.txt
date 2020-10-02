@@ -1,0 +1,3 @@
+https://webcache.googleusercontent.com/search?q=cache:EW-U5CTPLEMJ:https://vzhilin.me/2019/11/21/java-demux-decode-h264.html+&cd=1&hl=fr&ct=clnk&gl=de&client=firefox-b
+https://ffmpeg.org/doxygen/4.1/examples.html
+https://github.com/leandromoreira/ffmpeg-libav-tutorial#transcoding

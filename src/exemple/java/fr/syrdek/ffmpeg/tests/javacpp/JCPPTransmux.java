@@ -28,9 +28,9 @@ import org.slf4j.LoggerFactory;
 import fr.syrdek.ffmpeg.libav.java.CFlag;
 import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
 import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
-import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
-import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
+import fr.syrdek.ffmpeg.libav.java.io.IOSource;
 import fr.syrdek.ffmpeg.tests.Utils;
+import fr.syrdek.ffmpeg.tests.jav.impl.container.JAVOutputContainer;
 
 /**
  *
@@ -74,7 +74,7 @@ public class JCPPTransmux {
         BUFFER_SIZE,
         0,
         null,
-        JAVInputContainer.newAvIoReader(in, BUFFER_SIZE),
+        IOSource.newAvIoReader(in, BUFFER_SIZE),
         null,
         null));
 

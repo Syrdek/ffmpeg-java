@@ -1,0 +1,188 @@
+#!/bin/bash
+
+set -e
+
+SOURCE_DIR="ffmpeg/sources"
+BUILD_DIR="ffmpeg/build"
+LIB_DIR="$BUILD_DIR/lib"
+BIN_DIR="$BUILD_DIR/bin"
+
+PACKAGES_TO_INSTALL="autoconf automake build-essential cmake git git-core libass-dev libfreetype6-dev libgnutls28-dev libsdl2-dev libtool libva-dev libvdpau-dev libvorbis-dev libxcb1-dev libxcb-shm0-dev libxcb-xfixes0-dev pkg-config texinfo wget yasm zlib1g-dev libtheora-dev"
+
+# Installe les paquets.
+dpkg -l $PACKAGES_TO_INSTALL >/dev/null 2>&1 || (
+	sudo apt-get update -qq
+	sudo apt-get -y install $PACKAGES_TO_INSTALL
+)
+
+# Construit les dossiers dans lesquels seront posés les sources et les binaires
+mkdir -p "$SOURCE_DIR" "$BUILD_DIR" "$LIB_DIR" "$BIN_DIR"
+
+# Trouve les chemins absolus des dossiers.
+SOURCE_DIR="$(readlink -f $SOURCE_DIR)"
+BUILD_DIR="$(readlink -f $BUILD_DIR)"
+LIB_DIR="$(readlink -f $LIB_DIR)"
+BIN_DIR="$(readlink -f $BIN_DIR)"
+
+export PATH="$BIN_DIR:$LIB_DIR:$PATH"
+
+# Installe nasm
+nasm --version >/dev/null 2>&1 || (
+	cd "$SOURCE_DIR"
+	wget --no-check-certificate https://www.nasm.us/pub/nasm/releasebuilds/2.14.02/nasm-2.14.02.tar.bz2
+	tar xjvf nasm-2.14.02.tar.bz2
+	cd nasm-2.14.02
+	./autogen.sh
+	./configure --prefix="$BUILD_DIR" --bindir="$BIN_DIR"
+	make
+	make install
+)
+
+# Installe x264
+test -f "$LIB_DIR/libx264.a" || (
+	git config --global http.https://code.videolan.org/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://code.videolan.org/.sslVerify false
+	
+	cd "$SOURCE_DIR" &&
+	git -C x264 pull 2> /dev/null || git clone --depth 1 https://code.videolan.org/videolan/x264.git
+	cd x264
+	PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure --prefix="$BUILD_DIR" --bindir="$BIN_DIR" --enable-static --enable-pic
+	make
+	make install
+)
+
+# Installe x265
+test -f "$LIB_DIR/libx265.a" || (
+	git config --global http.https://bitbucket.org/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://bitbucket.org/.sslVerify false
+	
+	cd "$SOURCE_DIR"
+	git -C x265_git pull 2> /dev/null || git clone https://bitbucket.org/multicoreware/x265_git
+	cd x265_git/build/linux
+	cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$BUILD_DIR" -DENABLE_SHARED=off ../../source
+	make
+	make install
+)
+
+
+# Installe libvpx
+test -f "$LIB_DIR/libvpx.a" || (
+	git config --global http.https://chromium.googlesource.com/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://chromium.googlesource.com/.sslVerify false
+	
+	cd "$SOURCE_DIR"
+	git -C libvpx pull 2> /dev/null || git clone --depth 1 https://chromium.googlesource.com/webm/libvpx.git
+	cd libvpx
+	./configure --prefix="$BUILD_DIR" --disable-examples --disable-unit-tests --enable-vp9-highbitdepth --as=yasm
+	make
+	make install
+)
+
+# Installe libfdk-aac
+test -f "$LIB_DIR/libfdk-aac.a" >/dev/null 2>&1 || (
+	git config --global http.https://github.com/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://github.com/.sslVerify false
+
+	cd "$SOURCE_DIR"
+	git -C fdk-aac pull 2> /dev/null || git clone --depth 1 https://github.com/mstorsjo/fdk-aac
+	cd fdk-aac
+	autoreconf -fiv
+	./configure --prefix="$BUILD_DIR" --disable-shared
+	make
+	make install
+)
+
+# Installe libmp3lame
+test -f "$LIB_DIR/libmp3lame.a" || (
+	cd "$SOURCE_DIR"
+	wget --no-check-certificate lame-3.100.tar.gz https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz || [ -f "lame-3.100.tar.gz" ]
+	tar xzvf lame-3.100.tar.gz
+	cd lame-3.100
+	./configure --prefix="$BUILD_DIR" --bindir="$BIN_DIR" --disable-shared --enable-nasm
+	make
+	make install
+)
+
+# Installe libopus
+test -f "$LIB_DIR/libopus.a" || (
+	git config --global http.https://github.com/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://github.com/.sslVerify false
+
+	cd "$SOURCE_DIR"
+	git -C opus pull 2> /dev/null || git clone --depth 1 https://github.com/xiph/opus.git
+	cd opus
+	./autogen.sh
+	./configure --prefix="$BUILD_DIR" --disable-shared
+	make
+	make install
+)
+
+# Installe libaom
+test -f "$LIB_DIR/libaom.a" || (
+	git config --global http.https://aomedia.googlesource.com/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://aomedia.googlesource.com/.sslVerify false
+
+	cd "$SOURCE_DIR"
+	git -C aom pull 2> /dev/null || git clone --depth 1 https://aomedia.googlesource.com/aom
+	mkdir -p aom_build
+	cd aom_build
+	cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$BUILD_DIR" -DENABLE_SHARED=off -DENABLE_NASM=on ../aom
+	make
+	make install
+)
+
+
+# Installe libsvtav1
+test -f "$LIB_DIR/libSvtAv1Enc.a" || (
+	git config --global http.https://github.com/.proxy http://proxy.dune.thales:3128
+	git config --global http.https://github.com/.sslVerify false
+
+	cd "$SOURCE_DIR"
+	git -C SVT-AV1 pull 2> /dev/null || git clone https://github.com/AOMediaCodec/SVT-AV1.git
+	mkdir -p SVT-AV1/build
+	cd SVT-AV1/build
+	cmake -G "Unix Makefiles" -DCMAKE_INSTALL_PREFIX="$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release -DBUILD_DEC=OFF -DBUILD_SHARED_LIBS=OFF ..
+	make
+	make install
+)
+
+
+# Construit FFMPEG
+cd "$SOURCE_DIR"
+[ -x "$BIN_DIR/ffmpeg" ] || (
+	[ -d ffmpeg ] || (
+		[ -f ffmpeg-snapshot.tar.bz2 ] || wget  --no-check-certificate -O ffmpeg-snapshot.tar.bz2 https://ffmpeg.org/releases/ffmpeg-snapshot.tar.bz2
+		tar xjvf ffmpeg-snapshot.tar.bz2
+	)
+	cd ffmpeg
+
+	export TMPDIR=/var/tmp
+	PKG_CONFIG_PATH="$BUILD_DIR/lib/pkgconfig" ./configure \
+	  --prefix="$BUILD_DIR" \
+	  --pkg-config-flags="--static" \
+	  --extra-cflags="-I$BUILD_DIR/include" \
+	  --extra-ldflags="-L$BUILD_DIR/lib" \
+	  --extra-libs="-lpthread -lm" \
+	  --bindir="$BIN_DIR" \
+	  --enable-gpl \
+	  --enable-gnutls \
+	  --enable-libaom \
+	  --enable-libass \
+	  --enable-libfdk-aac \
+	  --enable-libfreetype \
+	  --enable-libmp3lame \
+	  --enable-libopus \
+	  --enable-libsvtav1 \
+	  --enable-libvorbis \
+	  --enable-libvpx \
+	  --enable-libx264 \
+	  --enable-libx265 \
+	  --enable-libtheora \
+	  --enable-libvorbis \
+	  --enable-nonfree
+	make
+	make install
+	hash -r
+)
+
+echo "OK, Tout est construit !"

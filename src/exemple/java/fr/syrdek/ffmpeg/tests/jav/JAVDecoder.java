@@ -12,9 +12,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
-import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
-import fr.syrdek.ffmpeg.libav.java.io.stream.in.JAVInputStream;
 import fr.syrdek.ffmpeg.tests.Utils;
+import fr.syrdek.ffmpeg.tests.jav.impl.container.JAVInputContainer;
+import fr.syrdek.ffmpeg.tests.jav.impl.stream.in.JAVInputStream;
 
 /**
  *
