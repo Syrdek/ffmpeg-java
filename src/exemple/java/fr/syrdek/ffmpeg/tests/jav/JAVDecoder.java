@@ -4,10 +4,10 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.bytedeco.javacpp.avcodec.AVPacket;
-import org.bytedeco.javacpp.avformat.AVStream;
-import org.bytedeco.javacpp.avutil.AVFrame;
-import org.bytedeco.javacpp.avutil.AVRational;
+import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.ffmpeg.avutil.AVRational;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,7 +17,7 @@ import fr.syrdek.ffmpeg.libav.java.io.stream.in.JAVInputStream;
 import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
- * 
+ *
  * @author Syrdek
  */
 public class JAVDecoder {

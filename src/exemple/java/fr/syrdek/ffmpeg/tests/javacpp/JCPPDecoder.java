@@ -10,35 +10,33 @@ import java.nio.channels.Channels;
 import java.nio.channels.ReadableByteChannel;
 import java.nio.channels.WritableByteChannel;
 
+import org.bytedeco.ffmpeg.avcodec.AVCodec;
+import org.bytedeco.ffmpeg.avcodec.AVCodecContext;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParserContext;
+import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.avutil.AVDictionary;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
+import org.bytedeco.ffmpeg.global.avcodec;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.IntPointer;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avcodec.AVCodec;
-import org.bytedeco.javacpp.avcodec.AVCodecContext;
-import org.bytedeco.javacpp.avcodec.AVCodecParserContext;
-import org.bytedeco.javacpp.avcodec.AVPacket;
-import org.bytedeco.javacpp.avutil;
-import org.bytedeco.javacpp.avutil.AVDictionary;
-import org.bytedeco.javacpp.avutil.AVFrame;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.github.manevolent.ffmpeg4j.FFmpegException;
-
+import fr.syrdek.ffmpeg.libav.java.FFmpegException;
 import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
- * 
+ *
  * @author Syrdek
  *
  */
 public class JCPPDecoder {
   private static final Logger LOG = LoggerFactory.getLogger(JCPPDecoder.class);
 
-
   public static void main(String[] args) throws Exception {
     Utils.cleanup();
-    
+
     try (final InputStream in = new FileInputStream("samples/audio.mp2");
         final OutputStream out = new FileOutputStream("target/result.wav")) {
       new JCPPDecoder(in, out).decode();
@@ -52,7 +50,7 @@ public class JCPPDecoder {
 
   private final WritableByteChannel outfile;
   private final ReadableByteChannel infile;
-  
+
   public JCPPDecoder(final InputStream infile, final OutputStream outfile) {
     super();
     this.infile = Channels.newChannel(infile);
@@ -61,7 +59,7 @@ public class JCPPDecoder {
 
   /**
    * Transcode le flux.
-   * 
+   *
    * @throws Exception
    */
   public void decode() throws Exception {
@@ -176,7 +174,7 @@ public class JCPPDecoder {
       }
     }
 
-    long remaining = (totalread - totaldecoded);
+    long remaining = totalread - totaldecoded;
     if (remaining > 0 && LOG.isWarnEnabled()) {
       LOG.warn("Octets lus: {}, décodés: {}, restant: {}",
           totalread,
@@ -187,13 +185,13 @@ public class JCPPDecoder {
           totalread,
           totaldecoded);
     }
-    
+
     dataPtr.close();
   }
 
   /**
    * Décode un paquet.
-   * 
+   *
    * @param decContext
    *          Le codec utilisé.
    * @param packet
@@ -202,37 +200,38 @@ public class JCPPDecoder {
    *          La frame a remplir.
    * @throws FFmpegException
    *           Si le décodage à échoué.
-   * @throws IOException 
+   * @throws IOException
    */
-  private void decodePacket(final AVCodecContext decContext, final AVPacket packet, final AVFrame frame) throws FFmpegException, IOException {
+  private void decodePacket(final AVCodecContext decContext, final AVPacket packet, final AVFrame frame)
+      throws FFmpegException, IOException {
     LOG.debug("Decodage d'un paquet size: {}", packet.size());
     int ret = avcodec.avcodec_send_packet(decContext, packet);
 
     if (ret < 0) {
       throw new FFmpegException("Impossible d'envoyer le paquet au décodeur");
     }
-    
+
     while (ret >= 0) {
       ret = avcodec.avcodec_receive_frame(decContext, frame);
       if (ret == avutil.AVERROR_EAGAIN() || ret == avutil.AVERROR_EOF) {
         LOG.debug("Fin de décodage du paquet");
         return;
-      } else if(ret < 0) {
+      } else if (ret < 0) {
         throw new FFmpegException("Erreur irrécupérable lors du décodage de frame");
       }
-      
+
       int dataSize = avutil.av_get_bytes_per_sample(decContext.sample_fmt());
       if (dataSize < 0) {
         throw new FFmpegException("Impossible de calculer la taille de l'échantillon");
       }
 
       LOG.debug("Ecriture de {} samples. Channels: {}, size: {}", frame.nb_samples(), decContext.channels(), dataSize);
-      
+
       for (int i = 0; i < frame.nb_samples(); i++) {
         for (int channel = 0; channel < decContext.channels(); channel++) {
           final ByteBuffer frameData = frame.data(channel)
-              .position(i*dataSize)
-              .limit((i+1)*dataSize)
+              .position(i * dataSize)
+              .limit((i + 1) * dataSize)
               .asByteBuffer();
           outfile.write(frameData);
         }

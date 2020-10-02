@@ -8,6 +8,16 @@
   
   <logger name="fr.gouv.mjl.dune.ffmpeg.java.io.AVIO" level="info"/>
   <logger name="fr.gouv.mjl.dune.ffmpeg.java.io.stream.JAVStream" level="info"/>
+  
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.process.AudioTimestamper" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.process.TimestampScaler" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.process.AudioResampler" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.MediaInputContainer" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.MediaOutputContainer" level="debug"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.process.VideoLimiter" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.decode.Decoder" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.impl.encode.Encoder" level="info"/>
+  <logger name="fr.syrdek.ffmpeg.tests.javacpp.JCPPTranscode" level="info"/>
 
   <root level="debug">
     <appender-ref ref="STDOUT" />

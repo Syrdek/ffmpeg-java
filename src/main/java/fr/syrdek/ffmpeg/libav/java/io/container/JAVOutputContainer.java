@@ -9,16 +9,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+import org.bytedeco.ffmpeg.avformat.AVFormatContext;
+import org.bytedeco.ffmpeg.avformat.AVIOContext;
+import org.bytedeco.ffmpeg.avformat.AVOutputFormat;
+import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avformat.Write_packet_Pointer_BytePointer_int;
+import org.bytedeco.ffmpeg.avutil.AVDictionary;
+import org.bytedeco.ffmpeg.global.avformat;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.bytedeco.javacpp.BytePointer;
 import org.bytedeco.javacpp.Pointer;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avformat.AVFormatContext;
-import org.bytedeco.javacpp.avformat.AVIOContext;
-import org.bytedeco.javacpp.avformat.AVOutputFormat;
-import org.bytedeco.javacpp.avformat.AVStream;
-import org.bytedeco.javacpp.avformat.Write_packet_Pointer_BytePointer_int;
-import org.bytedeco.javacpp.avutil;
-import org.bytedeco.javacpp.avutil.AVDictionary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,8 +32,9 @@ import fr.syrdek.ffmpeg.libav.java.io.stream.out.JAVOutputStream;
 
 /**
  * Permet d'écrire dans un conteneur Audio/Video.<br>
- * Cet objet doit être construit en passant par un {@link JAVOutputContainer.Builder}, qui permet de gérer les paramètres obligatoires et optionels.
- * 
+ * Cet objet doit être construit en passant par un {@link JAVOutputContainer.Builder}, qui permet de gérer les
+ * paramètres obligatoires et optionels.
+ *
  * @author Syrdek
  */
 public class JAVOutputContainer implements AutoCloseable {
@@ -47,7 +48,7 @@ public class JAVOutputContainer implements AutoCloseable {
 
   /**
    * Gère les différents paramètres de construction d'un {@link JAVInputContainer}.
-   * 
+   *
    * @author Syrdek
    */
   public static class Builder {
@@ -56,18 +57,18 @@ public class JAVOutputContainer implements AutoCloseable {
 
     /**
      * Utilise le format ayant le nom donné en paramètre.
-     * 
+     *
      * @param name
      *          Le nom du format à rechercher.
      * @throws FFmpegException
      *           Si le format donné est inconnu.
      */
     public Builder withFormatName(final String name) {
-      this.format = avformat.av_guess_format(name, null, null);
+      format = avformat.av_guess_format(name, null, null);
       if (format == null) {
         throw new FFmpegException("Format " + name + " inconnu");
       }
-      
+
       if (LOG.isDebugEnabled()) {
         LOG.debug("Format choisi a partir du nom {} : {} ({}) mime={}",
             name,
@@ -85,11 +86,11 @@ public class JAVOutputContainer implements AutoCloseable {
      *           Si le format donné est inconnu.
      */
     public Builder withFormatFilename(final String name) {
-      this.format = avformat.av_guess_format(null, name, null);
+      format = avformat.av_guess_format(null, name, null);
       if (format == null) {
         throw new FFmpegException("Format associé au fichier " + name + " inconnu");
       }
-      
+
       if (LOG.isDebugEnabled()) {
         LOG.debug("Format choisi a partir du nom de fichier {} : {} ({}) mime={}",
             name,
@@ -107,11 +108,11 @@ public class JAVOutputContainer implements AutoCloseable {
      *           Si le format donné est inconnu.
      */
     public Builder withFormatMimeType(final String mime) {
-      this.format = avformat.av_guess_format(null, null, mime);
+      format = avformat.av_guess_format(null, null, mime);
       if (format == null) {
         throw new FFmpegException("Format associé au type mime " + mime + " inconnu");
       }
-      
+
       if (LOG.isDebugEnabled()) {
         LOG.debug("Format choisi a partir du type mime {} : {} ({}) mime={}",
             mime,
@@ -147,24 +148,24 @@ public class JAVOutputContainer implements AutoCloseable {
       return new JAVOutputContainer(out, format, bufferSize);
     }
   }
-  
+
   /**
    * Construit un pointeur de fonction de lecture de flux.<br>
-   * <b>Attention :</b> Il est préférable d'utiliser un buffer de la même taille que celui utilisé par libav, car le remplissage est extrèmement lent sinon.
-   * 
+   * <b>Attention :</b> Il est préférable d'utiliser un buffer de la même taille que celui utilisé par libav, car le
+   * remplissage est extrèmement lent sinon.
+   *
    * @param in
    *          Le flux à lire.
    * @return Le pointeur de fonction permettant de remplir un buffer de lecture.
    */
   public static final Write_packet_Pointer_BytePointer_int newAvIoWriter(final OutputStream out, int bufferSize) {
     return new Write_packet_Pointer_BytePointer_int() {
-      private byte[] dataBuffer = new byte[bufferSize];
+      private final byte[] dataBuffer = new byte[bufferSize];
 
       /**
        * Remplit le buffer avec les <code>len</code> prochains octets.<br>
-       * 
-       * @return Le nombre d'octets lus.
-       *         <code>avutil.AVERROR_EOF</code> si le fichier est terminé.
+       *
+       * @return Le nombre d'octets lus. <code>avutil.AVERROR_EOF</code> si le fichier est terminé.
        *         <code>avutil.AVERROR_EIO</code> Si une erreur de lecture est survenue.
        */
       @Override
@@ -177,7 +178,7 @@ public class JAVOutputContainer implements AutoCloseable {
 
             // Récupère les données depuis le buffer de libav
             buffer.get(dataBuffer, written, toWrite);
-            
+
             // Envoie les données dans le flux de sortie.
             out.write(dataBuffer, 0, toWrite);
             written += toWrite;
@@ -197,7 +198,7 @@ public class JAVOutputContainer implements AutoCloseable {
   private final AVIOContext ioCtx;
 
   private final OutputStream output;
-  
+
   private boolean headerWritten = false;
 
   private List<JAVOutputStream> streams = null;
@@ -216,11 +217,11 @@ public class JAVOutputContainer implements AutoCloseable {
     this.output = output;
 
     // Définition du buffer, partagé avec FFMPEG natif.
-    this.streamPtr = new BytePointer(avutil.av_malloc(bufferSize));
-    this.streamPtr.capacity(bufferSize);
+    streamPtr = new BytePointer(avutil.av_malloc(bufferSize));
+    streamPtr.capacity(bufferSize);
 
     // Préparation du contexte.
-    this.ioCtx = checkAllocation(AVIOContext.class, avformat.avio_alloc_context(
+    ioCtx = checkAllocation(AVIOContext.class, avformat.avio_alloc_context(
         streamPtr,
         bufferSize,
         1,
@@ -230,23 +231,23 @@ public class JAVOutputContainer implements AutoCloseable {
         null));
 
     // Non seekable, non writable.
-    this.ioCtx.seekable(0);
+    ioCtx.seekable(0);
     ioCtx.max_packet_size(bufferSize);
 
     // Préparation du format.
-    this.formatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    this.formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.CUSTOM_IO));
+    formatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
+    formatCtx.flags(CFlag.plus(formatCtx.flags(), AVFormatFlag.CUSTOM_IO));
 
     checkAndThrow(avformat.avformat_alloc_output_context2(formatCtx, format, (String) null, null));
     LOG.debug("Flux d'écriture libav ouvert");
 
-    this.formatCtx.pb(ioCtx);
-    this.streams = new ArrayList<>();
+    formatCtx.pb(ioCtx);
+    streams = new ArrayList<>();
   }
 
   /**
-   * Ecrit les entêtes du fichier.
-   * Attention, tous les flux doivent avoir été ajoutés au conteneur avant d'écrire les entêtes.
+   * Ecrit les entêtes du fichier. Attention, tous les flux doivent avoir été ajoutés au conteneur avant d'écrire les
+   * entêtes.
    */
   public void writeHeaders() {
     if (streams.isEmpty()) {
@@ -254,20 +255,20 @@ public class JAVOutputContainer implements AutoCloseable {
     }
 
     LOG.debug("Ecriture des entêtes du conteneur");
-    checkAndThrow(avformat.avformat_write_header(formatCtx, (AVDictionary)null));
+    checkAndThrow(avformat.avformat_write_header(formatCtx, (AVDictionary) null));
     headerWritten = true;
   }
 
   /**
    * Ecrit un paquet de donnée.
-   * 
+   *
    * @param packet
    *          Le paquet à écrire.
    */
   public void writeInterleaved(JAVPacket packet) {
     checkAndThrow(avformat.av_interleaved_write_frame(formatCtx, packet.getPacket()));
   }
-  
+
   /**
    * Ecrit le trailer.
    */
@@ -278,7 +279,7 @@ public class JAVOutputContainer implements AutoCloseable {
 
   /**
    * Ajoute un flux de données au conteneur.
-   * 
+   *
    * @return Le flux audio créé.
    */
   public JAVOutputStream addStream() {
@@ -294,7 +295,7 @@ public class JAVOutputContainer implements AutoCloseable {
 
   /**
    * Ajoute un flux de données audio au conteneur.
-   * 
+   *
    * @return Le flux audio créé.
    */
   public JAVAudioOutputStream addStream(final AudioParameters parameters) {

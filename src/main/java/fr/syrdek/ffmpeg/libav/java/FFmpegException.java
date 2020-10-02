@@ -4,13 +4,13 @@ import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.text.MessageFormat;
 
-import org.bytedeco.javacpp.avutil;
+import org.bytedeco.ffmpeg.global.avutil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Exception lancée lorsqu'une erreur empêche le traitement audio/video par ffmpeg.
- * 
+ *
  * @author Syrdek
  */
 public class FFmpegException extends RuntimeException {
@@ -22,7 +22,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Détermine si un code retour FFmpeg est une erreur.
-   * 
+   *
    * @param returnCode
    *          Lecode retour.
    * @return <code>true</code> si le code indique une erreur, <code>false</code> sinon.
@@ -33,7 +33,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Récupère l'erreur correspondant au code donné.
-   * 
+   *
    * @param returnCode
    *          Le code d'erreur.
    * @return Le message de l'erreur, ou <code>null</code> si le code n'est pas une erreur.
@@ -53,7 +53,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Propage une {@link FFmpegException} si le code FFmpeg donné indique une erreur.
-   * 
+   *
    * @param returnCode
    *          Le code retour FFmpeg.
    * @return Le code retour FFmpeg.
@@ -68,8 +68,38 @@ public class FFmpegException extends RuntimeException {
   }
 
   /**
+   * Propage une {@link FFmpegException} si le code FFmpeg donné indique une erreur.
+   *
+   * @param returnCode
+   *          Le code retour FFmpeg.
+   * @param message
+   *          Le message a afficher en cas d'erreur.
+   * @param params
+   *          Les paramètres du message.
+   * @return Le code retour FFmpeg.
+   * @throws FFmpegException
+   *           Si le code donné indique une erreur FFmpeg.
+   */
+  public static int checkAndThrow(int returnCode, String message, Object... params) throws FFmpegException {
+    if (returnCode < 0) {
+      final String format = MessageFormat.format(message, params);
+      final StringBuilder err = new StringBuilder(format);
+      if (!format.endsWith(".")) {
+        err.append(".");
+      }
+
+      throw new FFmpegException(
+          err.append(" ")
+              .append(getFFmpegError(returnCode))
+              .append(".")
+              .toString());
+    }
+    return returnCode;
+  }
+
+  /**
    * Log de détail d'une erreur si le code retour indique une erreur FFmpeg.
-   * 
+   *
    * @param returnCode
    *          Le code retour FFmpeg.
    * @return Le code retour FFmpeg.
@@ -84,7 +114,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Log en debug de détail d'une erreur si le code retour indique une erreur FFmpeg.
-   * 
+   *
    * @param returnCode
    *          Le code retour FFmpeg.
    * @return Le code retour FFmpeg.
@@ -99,7 +129,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Log en warn de détail d'une erreur si le code retour indique une erreur FFmpeg.
-   * 
+   *
    * @param returnCode
    *          Le code retour FFmpeg.
    * @return Le code retour FFmpeg.
@@ -114,7 +144,7 @@ public class FFmpegException extends RuntimeException {
 
   /**
    * Envoie une exception si l'objet donné n'a pas pu être alloué.
-   * 
+   *
    * @param tclass
    *          La classe de l'objet à vérifier.
    * @param alloc
@@ -124,12 +154,12 @@ public class FFmpegException extends RuntimeException {
    *           Si l'objet n'a pas été alloué.
    */
   public static <T> T checkAllocation(Class<T> tclass, T alloc) {
-    return checkAllocation(tclass.getSimpleName(), alloc);
+    return checkAllocation(alloc, tclass.getSimpleName());
   }
 
   /**
    * Envoie une exception si l'objet donné n'a pas pu être alloué.
-   * 
+   *
    * @param alloc
    *          L'objet alloué.
    * @return L'objet alloué.
@@ -137,23 +167,26 @@ public class FFmpegException extends RuntimeException {
    *           Si l'objet n'a pas été alloué.
    */
   public static <T> T checkAllocation(T alloc) {
-    return checkAllocation("Impossible d'allouer l'objet", alloc);
+    return checkAllocation(alloc, "Impossible d'allouer l'objet");
   }
 
   /**
    * Envoie une exception si l'objet donné n'a pas pu être alloué.
-   * 
-   * @param message
-   *          Le message à afficher dans le cas où l'objet est <code>null</code>.
+   *
    * @param alloc
    *          L'objet alloué.
+   * @param message
+   *          Le message à afficher dans le cas où l'objet est <code>null</code>.
+   * @param params
+   *          Les paramètres a insérer dans le message.
+   *
    * @return L'objet alloué.
    * @throws FFmpegException
    *           Si l'objet n'a pas été alloué.
    */
-  public static <T> T checkAllocation(String message, T alloc) {
+  public static <T> T checkAllocation(T alloc, String message, Object... params) {
     if (alloc == null) {
-      throw new FFmpegException(message);
+      throw new FFmpegException(MessageFormat.format(message, params));
     }
     return alloc;
   }

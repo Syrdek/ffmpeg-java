@@ -1,25 +1,24 @@
 /**
- * 
+ *
  */
 package fr.syrdek.ffmpeg.libav.java.io.stream.in;
 
 import java.text.MessageFormat;
 
-import org.bytedeco.javacpp.avformat.AVFormatContext;
-import org.bytedeco.javacpp.avformat.AVStream;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 
 import fr.syrdek.ffmpeg.libav.java.Media;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
 
 /**
  * Un flux audio.
- * 
+ *
  * @author Syrdek
  */
 public class JAVAudioInputStream extends JAVInputStream {
   /**
    * Construit un flux audio.
-   * 
+   *
    * @param container
    *          Le conteneur associé.
    * @param stream
@@ -28,10 +27,11 @@ public class JAVAudioInputStream extends JAVInputStream {
   public JAVAudioInputStream(final JAVInputContainer container, final AVStream stream) {
     super(container, stream);
   }
-  
+
   /**
    * @return Le media traité par ce flux.
    */
+  @Override
   public Media getMedia() {
     return Media.AUDIO;
   }
@@ -39,6 +39,7 @@ public class JAVAudioInputStream extends JAVInputStream {
   /**
    * Une description du flux.
    */
+  @Override
   public String toString() {
     return MessageFormat.format("Flux Audio entrant [type={0}, id={1}, codec={2}, channels={3}, sample rate={4}]",
         codecParams.codec_type(),
@@ -51,6 +52,7 @@ public class JAVAudioInputStream extends JAVInputStream {
   /**
    * Ferme les ressources du flux.
    */
+  @Override
   public void close() {
     super.close();
   }

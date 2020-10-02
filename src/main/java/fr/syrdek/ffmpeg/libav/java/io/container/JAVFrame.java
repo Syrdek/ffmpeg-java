@@ -1,16 +1,16 @@
 /**
- * 
+ *
  */
 package fr.syrdek.ffmpeg.libav.java.io.container;
 
-import org.bytedeco.javacpp.avutil.AVFrame;
+import org.bytedeco.ffmpeg.avutil.AVFrame;
 
 import fr.syrdek.ffmpeg.libav.java.io.stream.in.JAVInputStream;
 
 /**
  * Contient les données d'un paquet d'informations (audio, vidéo, sous-titre ou autre) décodées.<br>
  * Une frame est généralement le résultat du décodage d'un {@link JAVPacket}.
- * 
+ *
  * @author Syrdek
  */
 public class JAVFrame {
@@ -19,7 +19,7 @@ public class JAVFrame {
 
   /**
    * Construit un paquet de données.<br>
-   * 
+   *
    * @param origin
    *          Le flux d'origine du paquet.
    * @param frame

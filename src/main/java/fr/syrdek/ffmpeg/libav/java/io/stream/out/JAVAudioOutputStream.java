@@ -1,42 +1,38 @@
 /**
- * 
+ *
  */
 package fr.syrdek.ffmpeg.libav.java.io.stream.out;
 
-import java.text.MessageFormat;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
+import org.bytedeco.ffmpeg.avformat.AVStream;
 
-import org.bytedeco.javacpp.avcodec.AVCodec;
-import org.bytedeco.javacpp.avcodec.AVCodecParameters;
-import org.bytedeco.javacpp.avformat.AVStream;
-
-import fr.syrdek.ffmpeg.libav.java.FFmpegException;
 import fr.syrdek.ffmpeg.libav.java.Media;
 import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
 import fr.syrdek.ffmpeg.libav.java.io.stream.AudioParameters;
 
-import org.bytedeco.javacpp.avutil;
-
 /**
  * Un flux audio.
- * 
+ *
  * @author Syrdek
  */
 public class JAVAudioOutputStream extends JAVOutputStream {
   /**
    * Construit un flux audio.
-   * 
+   *
    * @param container
    *          Le conteneur associé.
    * @param stream
    *          Le flux audio de libav.
    */
-  public JAVAudioOutputStream(final JAVOutputContainer container, final AudioParameters parameters, final AVStream stream) {
+  public JAVAudioOutputStream(final JAVOutputContainer container, final AudioParameters parameters,
+      final AVStream stream) {
     super(container, stream);
   }
-  
+
   /**
    * @return Le media traité par ce flux.
    */
+  @Override
   public Media getMedia() {
     return Media.AUDIO;
   }
@@ -44,6 +40,7 @@ public class JAVAudioOutputStream extends JAVOutputStream {
   /**
    * Une description du flux.
    */
+  @Override
   public String toString() {
     final AVCodecParameters params = avstream.codecpar();
 
@@ -67,6 +64,7 @@ public class JAVAudioOutputStream extends JAVOutputStream {
   /**
    * Ferme les ressources du flux.
    */
+  @Override
   public void close() {
     super.close();
   }

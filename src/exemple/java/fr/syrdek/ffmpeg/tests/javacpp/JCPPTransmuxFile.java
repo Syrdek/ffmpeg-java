@@ -3,11 +3,7 @@ package fr.syrdek.ffmpeg.tests.javacpp;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAllocation;
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -21,72 +17,42 @@ import org.bytedeco.ffmpeg.avutil.AVDictionary;
 import org.bytedeco.ffmpeg.global.avcodec;
 import org.bytedeco.ffmpeg.global.avformat;
 import org.bytedeco.ffmpeg.global.avutil;
-import org.bytedeco.javacpp.BytePointer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import fr.syrdek.ffmpeg.libav.java.CFlag;
 import fr.syrdek.ffmpeg.libav.java.FFmpegNatives;
-import fr.syrdek.ffmpeg.libav.java.io.AVFormatFlag;
-import fr.syrdek.ffmpeg.libav.java.io.container.JAVInputContainer;
-import fr.syrdek.ffmpeg.libav.java.io.container.JAVOutputContainer;
 import fr.syrdek.ffmpeg.tests.Utils;
 
 /**
  *
  * @author Syrdek
  */
-public class JCPPTransmux {
-  private static final Logger LOG = LoggerFactory.getLogger(JCPPTransmux.class);
+public class JCPPTransmuxFile {
+  private static final Logger LOG = LoggerFactory.getLogger(JCPPTransmuxFile.class);
   private static final int BUFFER_SIZE = 256 * 1024;
 
   public static void main(String[] args) throws Exception {
     Utils.cleanup();
 
-    try (final InputStream in = new FileInputStream("src/test/resources/5thElement.mp4");
-        final OutputStream out = new FileOutputStream("target/result.mkv")) {
-      new JCPPTransmux().withFormatName("matroska").transmux(in, out);
-    } catch (Exception e) {
-      LOG.error("Erreur dans le main", e);
-    }
+    new JCPPTransmuxFile().withFormatName("matroska").transmux("src/test/resources/5thElement.mp4",
+        "target/result.mkv");
   }
 
   private AVFormatContext inFormatCtx;
-  private BytePointer inStreamPtr;
-  private AVIOContext ioInCtx;
 
   private AVFormatContext outFormatCtx;
   private AVOutputFormat outFormat;
-  private BytePointer outStreamPtr;
-  private AVIOContext ioOutCtx;
 
   static {
     // S'assure que les libs natives soient bien chargées.
     FFmpegNatives.ensureLoaded();
   }
 
-  private void openInput(final InputStream in) {
-    inStreamPtr = new BytePointer(avutil.av_malloc(BUFFER_SIZE));
-    inStreamPtr.capacity(BUFFER_SIZE);
-
-    ioInCtx = checkAllocation(AVIOContext.class, avformat.avio_alloc_context(
-        inStreamPtr,
-        BUFFER_SIZE,
-        0,
-        null,
-        JAVInputContainer.newAvIoReader(in, BUFFER_SIZE),
-        null,
-        null));
-
-    // Non seekable, non writable.
-    ioInCtx.seekable(0);
-
+  private void openInput(final String in) {
     inFormatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    inFormatCtx.flags(CFlag.plus(inFormatCtx.flags(), AVFormatFlag.CUSTOM_IO));
-    inFormatCtx.pb(ioInCtx);
 
     // Ouvre le flux et lit les entêtes.
-    checkAndThrow(avformat.avformat_open_input(inFormatCtx, (String) null, null, null));
+    checkAndThrow(avformat.avformat_open_input(inFormatCtx, in, null, null));
 
     // Récupère les informations du format.
     checkAndThrow(avformat.avformat_find_stream_info(inFormatCtx, (AVDictionary) null));
@@ -99,28 +65,13 @@ public class JCPPTransmux {
     }
   }
 
-  private void openOutput(final OutputStream out) {
-    outStreamPtr = new BytePointer(avutil.av_malloc(BUFFER_SIZE));
-    outStreamPtr.capacity(BUFFER_SIZE);
+  private void openOutput(final String out) {
+    outFormatCtx = new AVFormatContext();
+    AVIOContext ioCtx = new AVIOContext();
 
-    ioOutCtx = checkAllocation(AVIOContext.class, avformat.avio_alloc_context(
-        outStreamPtr,
-        64 * 1024,
-        1,
-        null,
-        null,
-        JAVOutputContainer.newAvIoWriter(out, BUFFER_SIZE),
-        null));
-
-    // Non seekable, non writable.
-    ioOutCtx.seekable(0);
-    ioOutCtx.max_packet_size(BUFFER_SIZE);
-
-    outFormatCtx = checkAllocation(AVFormatContext.class, avformat.avformat_alloc_context());
-    outFormatCtx.flags(CFlag.plus(outFormatCtx.flags(), AVFormatFlag.CUSTOM_IO));
-
-    checkAndThrow(avformat.avformat_alloc_output_context2(outFormatCtx, outFormat, (String) null, null));
-    outFormatCtx.pb(ioOutCtx);
+    checkAndThrow(avformat.avformat_alloc_output_context2(outFormatCtx, outFormat, null, out));
+    checkAndThrow(avformat.avio_open(ioCtx, out, avformat.AVIO_FLAG_WRITE));
+    outFormatCtx.pb(ioCtx);
   }
 
   /**
@@ -128,7 +79,7 @@ public class JCPPTransmux {
    * @param in
    * @throws IOException
    */
-  public void transmux(final InputStream in, final OutputStream out) throws IOException {
+  public void transmux(final String in, final String out) throws IOException {
     openInput(in);
     openOutput(out);
 
@@ -189,14 +140,12 @@ public class JCPPTransmux {
 
     checkAndThrow(avformat.av_write_trailer(outFormatCtx));
 
-    avformat.avio_context_free(ioInCtx);
-    avformat.avio_context_free(ioOutCtx);
     avformat.avformat_close_input(inFormatCtx);
     avformat.avformat_free_context(inFormatCtx);
     avformat.avformat_free_context(outFormatCtx);
   }
 
-  public JCPPTransmux withFormatName(String formatName) {
+  public JCPPTransmuxFile withFormatName(String formatName) {
     outFormat = checkAllocation(AVOutputFormat.class, avformat.av_guess_format(formatName, null, null));
     return this;
   }

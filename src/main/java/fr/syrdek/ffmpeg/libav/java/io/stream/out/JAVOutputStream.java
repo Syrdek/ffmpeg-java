@@ -1,22 +1,16 @@
 /**
- * 
+ *
  */
 package fr.syrdek.ffmpeg.libav.java.io.stream.out;
 
 import static fr.syrdek.ffmpeg.libav.java.FFmpegException.checkAndThrow;
 
-import java.text.MessageFormat;
-import java.time.chrono.IsoChronology;
-
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avutil;
-import org.bytedeco.javacpp.avutil.AVRational;
-import org.bytedeco.javacpp.avcodec.AVCodec;
-import org.bytedeco.javacpp.avcodec.AVCodecContext;
-import org.bytedeco.javacpp.avcodec.AVCodecParameters;
-import org.bytedeco.javacpp.avcodec.AVPacket;
-import org.bytedeco.javacpp.avformat.AVFormatContext;
-import org.bytedeco.javacpp.avformat.AVStream;
+import org.bytedeco.ffmpeg.avcodec.AVCodec;
+import org.bytedeco.ffmpeg.avcodec.AVCodecParameters;
+import org.bytedeco.ffmpeg.avcodec.AVPacket;
+import org.bytedeco.ffmpeg.avformat.AVStream;
+import org.bytedeco.ffmpeg.avutil.AVRational;
+import org.bytedeco.ffmpeg.global.avcodec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +22,7 @@ import fr.syrdek.ffmpeg.libav.java.io.stream.in.JAVInputStream;
 
 /**
  * Représente un flux sortant au sein d'un conteneur (par exemple audio ou video).
- * 
+ *
  * @author Syrdek
  */
 public class JAVOutputStream implements AutoCloseable {
@@ -42,7 +36,7 @@ public class JAVOutputStream implements AutoCloseable {
 
   /**
    * Construit un flux sortant.
-   * 
+   *
    * @param container
    *          Le conteneur parent.
    * @param avstream
@@ -60,7 +54,7 @@ public class JAVOutputStream implements AutoCloseable {
    *           Si le codec donné n'existe pas ou n'est pas compatible avec le type de flux.
    */
   public void setCodec(String name) {
-    final avcodec.AVCodec codecByName = avcodec.avcodec_find_encoder_by_name(name);
+    final AVCodec codecByName = avcodec.avcodec_find_encoder_by_name(name);
 
     if (codecByName == null) {
       throw new FFmpegException("Le codec '" + name + "' est inconnu.");
@@ -76,7 +70,7 @@ public class JAVOutputStream implements AutoCloseable {
    *           Si le codec donné n'existe pas ou n'est pas compatible avec le type de flux.
    */
   public void setCodec(int id) {
-    final avcodec.AVCodec codecById = avcodec.avcodec_find_encoder(id);
+    final AVCodec codecById = avcodec.avcodec_find_encoder(id);
 
     if (codecById == null) {
       throw new FFmpegException("Le codec d'id '" + id + "' est inconnu.");
@@ -115,21 +109,23 @@ public class JAVOutputStream implements AutoCloseable {
   public void writeEncodedPacket(JAVPacket packet) {
     final AVPacket avpacket = packet.getPacket();
     avpacket.stream_index(avstream.index());
-    
+
     final JAVInputStream origin = packet.getOrigin();
     if (origin != null) {
       final AVRational originTimeBase = origin.getAvstream().time_base();
-      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la nouvelle base de temps du conteneur.
+      // Recalcule les PTS (presentation timestamp), DTS (decoding timestamp), et la durée de l'image en fonction de la
+      // nouvelle base de temps du conteneur.
       // Voir http://dranger.com/ffmpeg/tutorial05.html pour plus d'explications.
       avcodec.av_packet_rescale_ts(avpacket, originTimeBase, avstream.time_base());
     }
-    
+
     container.writeInterleaved(packet);
   }
 
   /**
    * Une description du flux.
    */
+  @Override
   public String toString() {
     final AVCodecParameters params = avstream.codecpar();
 

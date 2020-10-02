@@ -1,18 +1,18 @@
 package fr.syrdek.ffmpeg.libav.java;
 
+import org.bytedeco.ffmpeg.global.avcodec;
+import org.bytedeco.ffmpeg.global.avdevice;
+import org.bytedeco.ffmpeg.global.avformat;
+import org.bytedeco.ffmpeg.global.avutil;
+import org.bytedeco.ffmpeg.global.postproc;
+import org.bytedeco.ffmpeg.global.swresample;
+import org.bytedeco.ffmpeg.global.swscale;
 import org.bytedeco.javacpp.Loader;
-import org.bytedeco.javacpp.avcodec;
-import org.bytedeco.javacpp.avdevice;
-import org.bytedeco.javacpp.avformat;
-import org.bytedeco.javacpp.avutil;
-import org.bytedeco.javacpp.postproc;
-import org.bytedeco.javacpp.presets.swresample;
-import org.bytedeco.javacpp.presets.swscale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * 
+ *
  * @author Syrdek
  */
 public class FFmpegNatives {
@@ -27,13 +27,23 @@ public class FFmpegNatives {
     if (!loaded) {
       // Chargement de librairies natives.
       LOG.debug("Chargement des librairies natives.");
+      Loader.load(avutil.class);
       Loader.load(avformat.class);
       Loader.load(avcodec.class);
-      Loader.load(avutil.class);
       Loader.load(avdevice.class);
       Loader.load(swresample.class);
       Loader.load(swscale.class);
       Loader.load(postproc.class);
+
+      if (!System.getProperty("org.bytedeco.javacpp.loadlibraries", "true").equalsIgnoreCase("true")) {
+        System.loadLibrary("jniavutil");
+        System.loadLibrary("jniavformat");
+        System.loadLibrary("jniavcodec");
+        System.loadLibrary("jniavdevice");
+        System.loadLibrary("jniswresample");
+        System.loadLibrary("jniswscale");
+        System.loadLibrary("jnipostproc");
+      }
       loaded = true;
     }
   }
