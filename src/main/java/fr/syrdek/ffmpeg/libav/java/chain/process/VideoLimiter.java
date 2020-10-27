@@ -22,7 +22,6 @@ public class VideoLimiter extends BaseProducer<AVFrame> implements Consumer<AVFr
 
   private final AVRational sourceFps;
   private final AVRational timebase;
-  private final int expectedFps;
   private final int ratioNum;
   private final int ratioDen;
 
@@ -80,7 +79,6 @@ public class VideoLimiter extends BaseProducer<AVFrame> implements Consumer<AVFr
    */
   public VideoLimiter(final int expectedFps, final AVRational timebase, final AVRational sourceFps) {
     super();
-    this.expectedFps = expectedFps;
     this.sourceFps = sourceFps;
     this.timebase = timebase;
 

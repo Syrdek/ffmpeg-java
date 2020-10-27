@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
  */
 public class BinTranscode implements Callable<Void> {
   private static final Logger LOG = LoggerFactory.getLogger(BinTranscode.class);
-  private static final String FFMPEG = "src/main/bin/ffmpeg";
+  private static final String FFMPEG = "/usr/bin/ffmpeg";
 
   /**
    * @param args
@@ -82,17 +82,17 @@ public class BinTranscode implements Callable<Void> {
         // Permet d'encoder en vorbis en activant les fonctionnalités expérimentales.
         "-strict", "-2",
         // Sample rate audio.
-        "-ar", "44100",
+        "-ar", "48000",
         // Qualité audio.
         "-aq", "8",
         // Channels audio stéréo.
         "-ac", "2",
         // Codec audio.
-        "-acodec", "vorbis",
+        "-codec:a", "vorbis",
         // Résolution vidéo.
         "-s", "480x320",
         // Codec vidéo.
-        "-vcodec", "mpeg4",
+        "-codec:v", "mpeg4",
         // Modifie le nombre de FPS.
         "-filter:v", "fps=fps=24",
         // Format conteneur.
